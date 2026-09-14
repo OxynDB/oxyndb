@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Schema Ledger 2.0 integration checks. Run inside the Linux dev VM (ZFS + Docker):
+# Blackbox 2.0 integration checks. Run inside the Linux dev VM (ZFS + Docker):
 #   make integration-v2
 # Section 0 pins behaviour that must NOT change while 2.0 is built alongside it;
 # later sections test each phase. Complements scripts/integration_test.sh, which
@@ -321,6 +321,27 @@ $S branch delete v2bb >/dev/null 2>&1
 assert_eq "the branch deletes like any other" "$(sudo docker inspect vec-v2bb >/dev/null 2>&1 || echo gone)" "gone"
 for b in v2bb-rest v2bb-time v2bb-x; do $S branch delete "$b" >/dev/null 2>&1; done
 pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2bb_keep; DROP TABLE IF EXISTS v2bb_old; DROP TABLE IF EXISTS v2bb_target; DROP TABLE IF EXISTS v2bb_after" >/dev/null
+
+echo "### 5. Blackbox names (aliases of the ledger command, routes and tools)"
+assert_eq "vdb blackbox verify matches vdb ledger verify" "$($S blackbox verify main 2>&1)" "$($S ledger verify main 2>&1)"
+assert_eq "vdb blackbox entries matches vdb ledger entries" "$($S blackbox entries --limit 5 2>&1)" "$($S ledger entries --limit 5 2>&1)"
+assert_eq "vdb blackbox integrity matches vdb ledger integrity" \
+  "$($S blackbox integrity main 2>&1 | head -1 | grep -o 'INTACT\|TAMPERED')" "$($S ledger integrity main 2>&1 | head -1 | grep -o 'INTACT\|TAMPERED')"
+assert_eq "REST /blackbox/verify matches /ledger/verify" \
+  "$(curl -sk -H "$AUTH" "$API/api/branches/main/blackbox/verify")" "$(curl -sk -H "$AUTH" "$API/api/branches/main/ledger/verify")"
+assert_eq "REST /blackbox keeps the ledger columns" \
+  "$(curl -sk -H "$AUTH" "$API/api/branches/main/blackbox?limit=1" | jcols)" \
+  "at,actor,actor_kind,tool,branch,command_tag,object_identity,statement,status,risk"
+assert_eq "REST /blackbox/entries answers" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' -H "$AUTH" "$API/api/branches/main/blackbox/entries?limit=1")" "200"
+assert_eq "REST /blackbox routes require auth like the originals" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' "$API/api/branches/main/blackbox/verify")" "401"
+assert_eq "MCP lists both the Blackbox and the original tool names" \
+  "$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | "$S" mcp 2>/dev/null | python3 -c 'import sys,json; n={t["name"] for t in json.load(sys.stdin)["result"]["tools"]}; print(all(x in n for x in ["verify_blackbox","blackbox_integrity","blackbox_entries","verify_ledger","ledger_integrity","ledger_entries"]))')" "True"
+assert_eq "MCP blackbox_integrity matches ledger_integrity" \
+  "$(mcp_call blackbox_integrity '{"branch":"main"}' | head -1 | grep -o 'INTACT\|TAMPERED')" "$(mcp_call ledger_integrity '{"branch":"main"}' | head -1 | grep -o 'INTACT\|TAMPERED')"
+assert_eq "MCP verify_blackbox matches verify_ledger" \
+  "$(mcp_call verify_blackbox '{"branch":"main"}')" "$(mcp_call verify_ledger '{"branch":"main"}')"
 
 echo
 echo "==== ${PASS} passed, ${FAIL} failed ===="

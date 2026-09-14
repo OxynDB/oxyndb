@@ -7,7 +7,7 @@ screenshot each page:
 | File | Page | How to reach it |
 | --- | --- | --- |
 | `dashboard.png` | Ops dashboard | after login (default landing) |
-| `ledger.png` | Schema Ledger | **Ledger** in the nav |
+| `ledger.png` | Blackbox | **Blackbox** in the nav |
 | `console.png` | SQL console | **Console** in the nav |
 
 Save them here at those exact names (PNG, ~1400px wide looks best on GitHub).

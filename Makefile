@@ -51,7 +51,7 @@ test:             ## Run unit tests (host, no VM needed)
 integration:      ## Run the full end-to-end integration test in the Lima VM
 	lima bash -c 'cd "$(CURDIR)" && go build -o /tmp/vdb ./cmd/vdb' && lima bash "$(CURDIR)/scripts/integration_test.sh"
 
-integration-v2:   ## Run the Schema Ledger 2.0 checks (behaviour-unchanged + new) in the Lima VM
+integration-v2:   ## Run the Blackbox 2.0 checks (behaviour-unchanged + new) in the Lima VM
 	lima bash -c 'cd "$(CURDIR)" && go build -o /tmp/vdb ./cmd/vdb && go build -o /tmp/vdb-verify ./cmd/vdb-verify' && lima bash "$(CURDIR)/scripts/integration_ledger_v2.sh"
 
 web-dev:          ## DEPRECATED: the engine serves the UI at https://localhost:8080 (`vdb start`). Hot-reload dev server only.

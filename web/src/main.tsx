@@ -77,7 +77,7 @@ function Layout() {
           <NavLink to="/docs">Docs</NavLink>
           {user && <>
             <NavLink to="/dashboard">Dashboard</NavLink>
-            <NavLink to="/ledger">Ledger</NavLink>
+            <NavLink to="/blackbox">Blackbox</NavLink>
             <NavLink to="/integrity">Integrity</NavLink>
             <NavLink to="/console">Console</NavLink>
             <NavLink to="/import">Import</NavLink>
@@ -113,7 +113,8 @@ const router = createBrowserRouter([
       { path: 'guide', element: <Guide /> },
       { path: 'login', element: <Login /> },
       { path: 'dashboard', element: <RequireAuth><Dashboard /></RequireAuth> },
-      { path: 'ledger', element: <RequireAuth><Ledger /></RequireAuth> },
+      { path: 'blackbox', element: <RequireAuth><Ledger /></RequireAuth> },
+      { path: 'ledger', element: <RequireAuth><Ledger /></RequireAuth> }, // the page's original address
       { path: 'integrity', element: <RequireAuth><Integrity /></RequireAuth> },
       { path: 'import', element: <RequireAuth><Import /></RequireAuth> },
       { path: 'pipelines', element: <RequireAuth><Pipelines /></RequireAuth> },

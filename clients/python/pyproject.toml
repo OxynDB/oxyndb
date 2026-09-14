@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "vectoradb"
 version = "0.6.0"
-description = "Python client for VectoraDB — serverless Postgres with instant branching and a tamper-evident schema ledger."
+description = "Python client for VectoraDB — serverless Postgres with instant branching and Blackbox, a tamper-evident record of every schema change."
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "Apache-2.0" }

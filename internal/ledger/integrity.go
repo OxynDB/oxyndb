@@ -2,7 +2,7 @@
 
 package ledger
 
-// Integrity checking for the Schema Ledger, shared by the engine
+// Integrity checking for the Blackbox, shared by the engine
 // (`vdb ledger checkpoint|integrity`) and the standalone vdb-verify tool.
 //
 // This file uses only the Go standard library on purpose: it is everything an
@@ -33,7 +33,7 @@ const MerkleAlgorithm = "sha256-merkle-v1"
 // maxProblems caps how many individual problems a report lists.
 const maxProblems = 25
 
-// Row is one schema-ledger entry and its 2.0 capture hash. NULL columns are "".
+// Row is one Blackbox entry and its 2.0 capture hash. NULL columns are "".
 type Row struct {
 	ID             int64
 	At             time.Time

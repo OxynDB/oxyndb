@@ -1,10 +1,14 @@
-# VectoraDB ledger anchor format — version 1
+# VectoraDB Blackbox anchor format — version 1
 
 This document specifies the checkpoint **anchor files** VectoraDB writes for its
-Schema Ledger, so that anyone — including a security team that does not trust
+Blackbox (formerly the Schema Ledger), so that anyone — including a security team that does not trust
 VectoraDB — can verify a ledger independently. The reference verifier is
 `cmd/vdb-verify` (open source, standard-library hashing in
 `internal/ledger/integrity.go`), but nothing here depends on it.
+
+Blackbox is stored in the database as `vdb.schema_ledger`, and the identifiers
+below (`vectoradb-ledger-anchor/1`, `vdb ledger export`) keep their original names so
+existing anchors and tools keep working.
 
 ## Why anchors exist
 

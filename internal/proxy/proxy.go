@@ -266,7 +266,7 @@ func handle(client net.Conn) {
 		}
 	}
 	params["user"] = loginUser
-	// Attribution for the schema ledger: inject connection context that the
+	// Attribution for the Blackbox: inject connection context that the
 	// branch's DDL event triggers read via current_setting('vectoradb.*'). For a
 	// per-user login this is a fallback/display value; session_user is authoritative.
 	params["options"] = ledgerOptions(params["options"], actor, target)

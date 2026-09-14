@@ -71,7 +71,7 @@ export default function Ledger() {
 
   return (
     <div className="fade-up">
-      <h1>Schema Ledger</h1>
+      <h1>Blackbox</h1>
       <p className="lead" style={{ marginTop: -2 }}>
         A record the database keeps about itself — every schema change, attributed and policy-checked.
       </p>
@@ -99,7 +99,7 @@ export default function Ledger() {
         <button className="ghost" onClick={() => loadPage(true)} disabled={busy}>{busy ? '…' : 'Refresh'}</button>
       </div>
 
-      {err && <div className="err">{err.includes('schema_ledger') ? 'The ledger is not installed on this branch yet.' : err}</div>}
+      {err && <div className="err">{err.includes('schema_ledger') ? 'Blackbox is not installed on this branch yet.' : err}</div>}
 
       <div className="table-wrap" style={{ marginTop: 14 }}>
         <table>
@@ -128,7 +128,7 @@ export default function Ledger() {
             {/* sentinel row — the observer loads the next 25 as it nears the viewport */}
             <tr ref={sentinel}>
               <td colSpan={5} className="muted" style={{ textAlign: 'center', padding: '10px', fontSize: 13 }}>
-                {busy ? 'Loading…' : (!hasMore && rows.length > 0) ? 'End of ledger' : ''}
+                {busy ? 'Loading…' : (!hasMore && rows.length > 0) ? 'End of record' : ''}
               </td>
             </tr>
           </tbody>

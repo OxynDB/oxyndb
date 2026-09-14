@@ -67,16 +67,16 @@ Branching:
   branch suspend <name> Stop a branch (data preserved); resumes on next connect
   branch resume <name>  Start a suspended branch
 
-Schema ledger (RECORD layer):
-  ledger [branch] [--limit N]  Show captured DDL changes — attributed & policy-checked
-  ledger verify [branch]       Verify the tamper-evident hash chain is intact
-  ledger upgrade [branch|--all] Apply the current ledger definition to existing branches
-  ledger checkpoint [branch]   Anchor new ledger entries outside the database (Merkle checkpoint)
-  ledger integrity [branch]    Check the ledger against its anchors (detects rewritten history)
-  ledger export [branch]       Write every ledger entry as JSON lines (for vdb-verify / audits)
-  ledger entries [branch]      Newest ledger entries with their ids (--limit N)
-  ledger branch-before <id>    New branch of main as it was just before ledger entry <id> (--as name)
-  ledger revert --to <ts>      Time-travel revert of a branch's schema+data to a moment
+Blackbox — the database's record of every schema change (RECORD layer; vdb ledger … works too):
+  blackbox [branch] [--limit N]   Show captured DDL changes — attributed & policy-checked
+  blackbox verify [branch]        Verify the tamper-evident hash chain is intact
+  blackbox upgrade [branch|--all] Apply the current Blackbox definition to existing branches
+  blackbox checkpoint [branch]    Anchor new entries outside the database (Merkle checkpoint)
+  blackbox integrity [branch]     Check the record against its anchors (detects rewritten history)
+  blackbox export [branch]        Write every entry as JSON lines (for vdb-verify / audits)
+  blackbox entries [branch]       Newest entries with their ids (--limit N)
+  blackbox branch-before <id>     New branch of main as it was just before entry <id> (--as name)
+  blackbox revert --to <ts>       Time-travel revert of a branch's schema+data to a moment
 
 Migration:
   import --from <src> [--as <name>]  Migrate a DB into a new instance. <src> is a
@@ -105,7 +105,7 @@ Serverless front door:
 Agent Branch API:
   serve [--addr :8088] Run the HTTP API: one database branch per AI agent
   mcp                  Run the MCP server on stdio: an agent framework gets a database,
-                       runs SQL, sees what it changed (the ledger), and throws it away
+                       runs SQL, sees what it changed (Blackbox), and throws it away
 
 Auth (admin):
   user create <email>            Create an account (prompts for a password)
@@ -216,7 +216,7 @@ func main() {
 		must(branch.Restore(ts))
 	case "branch":
 		branchCmd(os.Args[2:])
-	case "ledger":
+	case "ledger", "blackbox": // Blackbox is the product name; both commands work
 		ledgerCmd(os.Args[2:])
 	case "import":
 		importCmd(os.Args[2:])

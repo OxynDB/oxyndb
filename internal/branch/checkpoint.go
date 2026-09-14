@@ -17,7 +17,7 @@ import (
 	"github.com/vectoradb/vectoradb/internal/ledger"
 )
 
-// Schema Ledger 2.0 checkpoints: a Merkle root over a contiguous range of ledger
+// Blackbox 2.0 checkpoints: a Merkle root over a contiguous range of ledger
 // entries, recorded in vdb.ledger_checkpoints and written as a read-only anchor
 // file outside the database. Integrity trusts the anchor files, so history that
 // was rewritten inside the database — even with a recomputed hash chain — is

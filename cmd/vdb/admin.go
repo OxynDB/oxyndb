@@ -96,7 +96,7 @@ func adminScope(named string) ([]string, error) {
 }
 
 // ledgerUpgradeCmd handles `vdb ledger upgrade [branch|--all]`: re-applies the
-// current schema-ledger definition (idempotent). main is also upgraded on every
+// current Blackbox definition (idempotent). main is also upgraded on every
 // `vdb start`; existing branches keep the definition they were cloned with until
 // upgraded here.
 func ledgerUpgradeCmd(args []string) {

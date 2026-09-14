@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: AGPL-3.0-or-later
 --
--- VectoraDB Schema Ledger 2.0 — additive objects, installed AFTER ledger.sql.
+-- VectoraDB Blackbox 2.0 — additive objects, installed AFTER ledger.sql.
 --
 -- Nothing here changes an object ledger.sql owns: vdb.schema_ledger, its hash
 -- chain (_ledger_hash / chain_row) and its event triggers are untouched, so every

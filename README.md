@@ -12,7 +12,7 @@ postgres.ai / Database Lab model, implemented in Go.
 
 The command-line tool is **`vdb`**. Everything below is a `vdb …` command.
 
-> **New here?** Jump to [Install](#install) · [Quickstart](#quickstart) · [The Schema Ledger](#the-schema-ledger)
+> **New here?** Jump to [Install](#install) · [Quickstart](#quickstart) · [Blackbox](#blackbox)
 
 ---
 
@@ -21,29 +21,29 @@ The command-line tool is **`vdb`**. Everything below is a `vdb …` command.
 The web console is served by the engine itself at **https://localhost:8080** — no
 separate dev server to run.
 
-| Ops dashboard | Schema Ledger | SQL console |
+| Ops dashboard | Blackbox | SQL console |
 | --- | --- | --- |
-| ![Dashboard](docs/screenshots/dashboard.png) | ![Ledger](docs/screenshots/ledger.png) | ![Console](docs/screenshots/console.png) |
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Blackbox](docs/screenshots/ledger.png) | ![Console](docs/screenshots/console.png) |
 
 ---
 
 ## What you get
 
-- **[Schema Ledger](#the-schema-ledger)** — every `CREATE`/`ALTER`/`DROP`/`GRANT`
+- **[Blackbox](#blackbox)** — every `CREATE`/`ALTER`/`DROP`/`GRANT`
   recorded with the actor (human or agent), tool, and branch; **tamper-evident**
-  (hash-chained, append-only, `vdb ledger verify`) and **non-forgeable** (clients
+  (hash-chained, append-only, `vdb blackbox verify`) and **non-forgeable** (clients
   connect as a per-user role, so the recorded actor is the login identity). No
   other Postgres branching tool has this.
 - **Instant branching** — `vdb branch create qa` clones the whole database in
   seconds (copy-on-write), fully isolated; `main` is untouched. Plus
-  `vdb branch reset` (start over) and `vdb branch diff` (what changed, from the ledger).
+  `vdb branch reset` (start over) and `vdb branch diff` (what changed, from Blackbox).
 - **Time travel / PITR** — continuous WAL archival; restore to any point.
 - **One serverless endpoint** — connect to `:6432`; the database name *is* the
   branch. Idle branches scale to zero and wake on connect. TLS on by default, so
   `sslmode=require` clients connect out of the box.
 - **A database per AI agent** — the Agent Branch API over HTTP, or the
   **Model Context Protocol** (`vdb mcp`): an agent gets a database, runs SQL, sees
-  what it changed (from the ledger), and throws it away — one standard interface.
+  what it changed (from Blackbox), and throws it away — one standard interface.
 - **Migrate from anything** — import from PostgreSQL, MySQL/MariaDB, MongoDB, and
   `.sql`/`.csv`/`.json`/`.ndjson` files, each landing in a fresh branch.
 - **ETL pipelines** *(experimental)* — dbt-style SQL models with data-quality
@@ -53,7 +53,7 @@ separate dev server to run.
 - **Accounts, API keys, RLS** — email/password or GitHub/Google OAuth; keys are
   the gateway password; Postgres row-level security and GRANTs apply to clients.
 - **Web console** — a React UI served by the engine: dashboard, SQL console,
-  Ledger viewer, import, pipelines, API keys.
+  Blackbox viewer, import, pipelines, API keys.
 - **Client SDKs** — an OpenAPI spec (served at `/api/openapi.yaml`) plus
   dependency-free [Python and TypeScript clients](clients/).
 
@@ -61,9 +61,11 @@ Per-install credentials are generated on first run — **nothing is hardcoded**.
 
 ---
 
-## The Schema Ledger
+## Blackbox
 
-The differentiator. Three Postgres event triggers, installed into `main` and
+The differentiator: **Blackbox**, the database's own flight recorder for schema
+changes (formerly called the Schema Ledger — `vdb ledger …`, the `/ledger` API
+routes and the original MCP tool names all still work). Three Postgres event triggers, installed into `main` and
 inherited by every branch, capture **every** schema change and attribute it:
 
 - **who** — the actor (a human email, or `agent-alice`) and whether it was a
@@ -75,16 +77,16 @@ inherited by every branch, capture **every** schema change and attribute it:
   unless explicitly overridden, and blocked attempts are recorded too.
 
 ```bash
-vdb ledger              # every schema change on this branch, most recent first
-vdb ledger verify       # prove the record has not been tampered with
+vdb blackbox            # every schema change on this branch, most recent first
+vdb blackbox verify     # prove the record has not been tampered with
 ```
 
 **It cannot be quietly rewritten.** Each row is hash-chained to the one before
-it, so a deleted or edited entry breaks the chain and `vdb ledger verify` catches
+it, so a deleted or edited entry breaks the chain and `vdb blackbox verify` catches
 it — even if a superuser disabled the triggers. The table is append-only. And
 because the gateway logs each client in as a **per-user Postgres role**, the
 recorded actor is the login identity: a client cannot forge who made a change,
-even by `SET`-ting a session variable. There is a **Ledger** page in the web
+even by `SET`-ting a session variable. There is a **Blackbox** page in the web
 console too.
 
 ---
@@ -175,7 +177,7 @@ INSERT INTO notes(body) VALUES ('hello');
 ```
 
 ```bash
-vdb ledger qa                    # see that CREATE TABLE, attributed to you
+vdb blackbox qa                  # see that CREATE TABLE, attributed to you
 vdb branch delete qa             # throw it away; main is untouched
 ```
 
@@ -191,7 +193,7 @@ so your browser shows a one-time "not private" warning to accept; point
 
 - a **dashboard** (live status + branch create/suspend/resume/delete),
 - a **SQL console** (run queries against any branch, expand rows as JSON),
-- a **Ledger** viewer (filter by actor, table, risk, kind),
+- a **Blackbox** viewer (filter by actor, table, risk, kind),
 - **import** and **pipelines** pages, and **API keys**.
 
 > The web app is embedded in the engine binary and served same-origin — there is
@@ -214,18 +216,18 @@ vdb stop         # stop servers and containers (data preserved)
 vdb branch create qa            # instant copy-on-write branch of main
 vdb branch list                 # branches and their containers
 vdb branch reset qa             # re-clone from parent, discarding changes
-vdb branch diff main qa         # schema changes distinguishing two branches (from the ledger)
+vdb branch diff main qa         # schema changes distinguishing two branches (from Blackbox)
 vdb branch suspend qa           # stop a branch (data preserved); wakes on connect
 vdb branch resume qa
 vdb branch delete qa
 ```
 
-**Schema ledger**
+**Blackbox** (`vdb ledger …` works too)
 
 ```bash
-vdb ledger [branch] [--limit N] # captured DDL — attributed and policy-checked
-vdb ledger verify [branch]      # verify the tamper-evident hash chain
-vdb ledger revert --to <ts>     # time-travel a branch's schema+data to a moment
+vdb blackbox [branch] [--limit N] # captured DDL — attributed and policy-checked
+vdb blackbox verify [branch]    # verify the tamper-evident hash chain
+vdb blackbox revert --to <ts>   # time-travel a branch's schema+data to a moment
 ```
 
 **Durability / time travel**
@@ -277,7 +279,7 @@ from vectoradb import VectoraDB
 db = VectoraDB(api_key="vdb_…", verify_tls=False)   # local self-signed cert
 db.create_branch("qa")
 print(db.query("qa", "select 1"))
-print(db.verify_ledger("qa"))
+print(db.verify_blackbox("qa"))
 ```
 
 Generate a client for any other language from the spec (see [`clients/README.md`](clients/README.md)).
@@ -302,8 +304,8 @@ one standard interface:
 vdb mcp                         # MCP server on stdio
 ```
 
-MCP tools: `create_branch`, `run_sql`, `changes` (what did I change, from the
-ledger), `verify_ledger`, `list_branches`, `delete_branch`. DDL an agent runs is
+MCP tools: `create_branch`, `run_sql`, `changes` (what did I change, from
+Blackbox), `verify_blackbox`, `list_branches`, `delete_branch`. DDL an agent runs is
 attributed to that agent automatically.
 
 ---

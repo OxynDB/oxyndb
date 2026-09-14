@@ -9,7 +9,7 @@ import { VectoraDB } from "@vectoradb/client"
 const db = new VectoraDB("vdb_…")            // API key
 await db.createBranch("qa")
 console.log(await db.query("qa", "select 1"))
-console.log(await db.verifyLedger("qa"))     // tamper-evidence check
+console.log(await db.verifyBlackbox("qa"))   // tamper-evidence check (verifyLedger() still works)
 ```
 
 > The engine serves a self-signed cert by default. In Node, point at a host with

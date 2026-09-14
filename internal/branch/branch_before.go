@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// Schema Ledger 2.0: branch from just before a ledger entry.
+// Blackbox 2.0: branch from just before a ledger entry.
 //
 // Given a ledger entry on main, BranchBeforeEntry builds a new branch holding
 // main exactly as it was the moment before that change committed: it restores
@@ -376,7 +376,7 @@ func BranchBeforeEntry(src string, entryID int64, newName string, logf func(form
 	}
 	kind, target := recoveryTarget(e)
 	if kind == "time" {
-		logf("entry %d has no captured transaction id (recorded before Schema Ledger 2.0 capture); using its time %s", entryID, target)
+		logf("entry %d has no captured transaction id (recorded before Blackbox 2.0 capture); using its time %s", entryID, target)
 	}
 
 	// 2. Make sure the change's commit is archived, then pick the base backup.

@@ -76,7 +76,7 @@ export const getLedger = (name: string, filters: Record<string, string> = {}) =>
   const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v)).toString()
   return req('GET', `${API}/api/branches/${name}/ledger${qs ? '?' + qs : ''}`) as Promise<QueryResult>
 }
-// --- ledger integrity (Schema Ledger 2.0) ---
+// --- Blackbox integrity (Blackbox 2.0) ---
 export type IntegrityReport = {
   intact: boolean; rows: number; chained_rows: number; legacy_rows: number
   checkpoints: number; anchored_rows: number; unanchored_rows: number

@@ -10,7 +10,9 @@ info:
   version: "0.6"
   description: >
     Control-plane and Agent Branch APIs for VectoraDB — serverless PostgreSQL
-    with instant branching, time-travel, and a tamper-evident Schema Ledger.
+    with instant branching, time-travel, and Blackbox — a tamper-evident record of
+    every schema change. Every `/api/branches/{name}/ledger…` path is also served
+    at `/api/branches/{name}/blackbox…`.
     All endpoints are served over TLS. Authenticate with an API key
     (`vdb_…`) as a Bearer token.
   license:
@@ -26,6 +28,9 @@ tags:
   - name: status
   - name: branches
   - name: ledger
+    description: >-
+      Blackbox, the record of every schema change. Each path below is also served with
+      `/blackbox` in place of `/ledger` (for example /api/branches/{name}/blackbox/verify).
   - name: pipelines
   - name: import
   - name: keys
@@ -115,7 +120,7 @@ paths:
   /api/branches/{name}/ledger:
     get:
       tags: [ledger]
-      summary: The branch's schema-ledger history (filterable).
+      summary: The branch's Blackbox history (filterable).
       parameters:
         - { $ref: "#/components/parameters/BranchName" }
         - { name: actor, in: query, schema: { type: string } }
@@ -127,14 +132,14 @@ paths:
         - { name: offset, in: query, schema: { type: integer } }
       responses:
         "200":
-          description: Ledger rows.
+          description: Blackbox rows.
           content: { application/json: { schema: { $ref: "#/components/schemas/QueryResult" } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /api/branches/{name}/ledger/verify:
     get:
       tags: [ledger]
-      summary: Recompute the ledger's hash chain and report whether it is intact.
+      summary: Recompute the Blackbox hash chain and report whether it is intact.
       parameters: [{ $ref: "#/components/parameters/BranchName" }]
       responses:
         "200":
@@ -145,7 +150,7 @@ paths:
   /api/branches/{name}/ledger/integrity:
     get:
       tags: [ledger]
-      summary: Check the ledger against its checkpoint anchors, which are stored outside the database.
+      summary: Check the Blackbox record against its checkpoint anchors, which are stored outside the database.
       description: >
         Detects edited, deleted or wiped history even when the in-database hash chain was
         rewritten to hide it. Rows written after the last checkpoint are only hash-chain checked.
@@ -173,7 +178,7 @@ paths:
   /api/branches/{name}/ledger/checkpoint:
     post:
       tags: [ledger]
-      summary: Anchor the ledger entries added since the last checkpoint.
+      summary: Anchor the Blackbox entries added since the last checkpoint.
       parameters: [{ $ref: "#/components/parameters/BranchName" }]
       responses:
         "200":
@@ -206,7 +211,7 @@ paths:
   /api/branches/{name}/ledger/export:
     get:
       tags: [ledger]
-      summary: Every ledger entry with its capture columns, one JSON document per line.
+      summary: Every Blackbox entry with its capture columns, one JSON document per line.
       description: The input vdb-verify checks offline with --export.
       parameters: [{ $ref: "#/components/parameters/BranchName" }]
       responses:
@@ -218,7 +223,7 @@ paths:
   /api/branches/{name}/ledger/entries:
     get:
       tags: [ledger]
-      summary: Newest ledger entries with their ids, newest first.
+      summary: Newest Blackbox entries with their ids, newest first.
       description: The ids are what POST /api/branches/{name}/ledger/{id}/branch takes.
       parameters:
         - { $ref: "#/components/parameters/BranchName" }
@@ -245,14 +250,14 @@ paths:
   /api/branches/{name}/ledger/{id}/branch:
     post:
       tags: [ledger]
-      summary: Create a branch holding main as it was just before a ledger entry.
+      summary: Create a branch holding main as it was just before a Blackbox entry.
       description: >-
         Restores the newest base backup that finished before the entry and replays archived WAL up to,
-        but not including, the entry's transaction (or its time, for entries recorded before Schema
-        Ledger 2.0 capture). Synchronous; typically takes a few minutes. Only main can be the source.
+        but not including, the entry's transaction (or its time, for entries recorded before Blackbox 2.0
+        capture). Synchronous; typically takes a few minutes. Only main can be the source.
       parameters:
         - { $ref: "#/components/parameters/BranchName" }
-        - { name: id, in: path, required: true, schema: { type: integer, format: int64 }, description: Ledger entry id }
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 }, description: Blackbox entry id }
       requestBody:
         required: false
         content:
@@ -282,7 +287,7 @@ paths:
                   seconds: { type: integer }
         "400": { description: Invalid entry id, name, source branch, or a BLOCKED entry. }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { description: No such ledger entry. }
+        "404": { description: No such Blackbox entry. }
         "409": { description: A branch with that name already exists. }
         "422": { description: No base backup finished before the entry. }
 

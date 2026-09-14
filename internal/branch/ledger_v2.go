@@ -9,7 +9,7 @@ import (
 	"github.com/vectoradb/vectoradb/internal/ledger"
 )
 
-// EnsureLedgerV2 installs (or upgrades) the Schema Ledger 2.0 additions on a
+// EnsureLedgerV2 installs (or upgrades) the Blackbox 2.0 additions on a
 // branch. It is idempotent and needs the base ledger (InstallLedger) first.
 func EnsureLedgerV2(name string) error {
 	if name == "" {
