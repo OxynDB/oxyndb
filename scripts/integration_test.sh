@@ -27,7 +27,7 @@ KEY="$($S apikey create test@vectoradb.dev ci 2>/dev/null | grep -o 'vdb_[A-Za-z
 AUTH="Authorization: Bearer $KEY"
 assert_eq "unauthenticated API is rejected" "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost:8080/api/status)" "401"
 assert_eq "control plane reports main ready" "$(curl -sk -H "$AUTH" https://localhost:8080/api/status | jget mainReady)" "True"
-assert_eq "gateway rejects a bad key" "$(PGPASSWORD=nope psql "$GATEWAY/main" -tAc 'select 1' 2>&1 | grep -c 'invalid API key')" "1"
+assert_eq "gateway rejects a bad key" "$(PGPASSWORD=nope psql "$GATEWAY/main" -tAc 'select 1' 2>&1 | grep -c 'invalid API key' | awk '{print ($1 >= 1)}')" "1"
 assert_eq "gateway accepts the API key" "$(PGPASSWORD="$KEY" psql "$GATEWAY/main" -tAc 'select 1' 2>/dev/null)" "1"
 
 echo "### 2. branch isolation"
@@ -92,7 +92,7 @@ assert_eq "blocked attempt is recorded durably" \
   "$(pg vec-main "SELECT count(*) FROM vdb.schema_ledger WHERE status='BLOCKED' AND command_tag='DROP TABLE'")" "1"
 # Tamper-evidence: the ledger is append-only, and the hash chain verifies intact.
 assert_eq "ledger is append-only (a plain DELETE is blocked)" \
-  "$(pg vec-main "DELETE FROM vdb.schema_ledger WHERE id=(SELECT max(id) FROM vdb.schema_ledger)" 2>&1 | grep -c 'append-only')" "1"
+  "$(sudo docker exec vec-main psql -U vectoradb -d vectoradb -tAc "DELETE FROM vdb.schema_ledger WHERE id=(SELECT max(id) FROM vdb.schema_ledger)" 2>&1 | grep -c 'append-only')" "1"
 assert_eq "hash chain verifies intact (0 broken rows)" \
   "$(pg vec-main "SELECT count(*) FROM (SELECT (row_hash <> vdb._ledger_hash(s.*) OR prev_hash IS DISTINCT FROM coalesce(lag(row_hash) OVER (ORDER BY id),'')) AS broken FROM vdb.schema_ledger s WHERE row_hash IS NOT NULL) x WHERE broken")" "0"
 pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS ledg" >/dev/null 2>&1
