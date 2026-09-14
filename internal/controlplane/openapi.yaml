@@ -275,6 +275,49 @@ paths:
                     entries: { type: integer }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /api/branches/{name}/impact:
+    post:
+      tags: [ledger]
+      summary: What a change would affect — dependents, other branches that have the object, policy verdict, score. Nothing is run.
+      parameters: [{ $ref: "#/components/parameters/BranchName" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Send sql, or object (and optionally column).
+              properties:
+                sql: { type: string, example: "ALTER TABLE orders DROP COLUMN note" }
+                object: { type: string, description: A table, view, materialized view, index or sequence }
+                column: { type: string }
+      responses:
+        "200":
+          description: The impact report.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  branch: { type: string }
+                  action: { type: string }
+                  destructive: { type: boolean }
+                  found: { type: boolean }
+                  target: { type: string }
+                  type: { type: string }
+                  column: { type: [string, "null"] }
+                  rows_estimate: { type: integer }
+                  size_bytes: { type: integer }
+                  dependents: { type: array, items: { type: object } }
+                  truncated: { type: boolean }
+                  branches: { type: array, items: { type: object } }
+                  policy: { type: array, items: { $ref: "#/components/schemas/PolicyDetail" } }
+                  score: { type: integer }
+                  level: { type: string, enum: [none, low, medium, high] }
+                  reasons: { type: array, items: { type: string } }
+        "400": { description: Neither sql nor object, or a statement whose target isn't recognised. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /api/branches/{name}/ledger/{id}/branch:
     post:
       tags: [ledger]
@@ -408,6 +451,64 @@ paths:
       responses:
         "200": { description: Evaluations., content: { application/json: { schema: { type: array, items: { type: object } } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/ledger/diff:
+    get:
+      tags: [ledger]
+      summary: Schema changes made on each of two branches since they split, and objects both changed. Read-only.
+      parameters:
+        - { name: a, in: query, required: true, schema: { type: string } }
+        - { name: b, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The diff.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  a: { type: string }
+                  b: { type: string }
+                  a_parent: { type: string }
+                  b_parent: { type: string }
+                  common_entries: { type: integer }
+                  fork_after_id: { type: integer }
+                  fork_after_at: { type: string, format: date-time }
+                  a_only: { type: array, items: { type: object } }
+                  b_only: { type: array, items: { type: object } }
+                  both_touched: { type: array, items: { type: object } }
+        "400": { description: a or b missing. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: No such branch. }
+
+  /api/blackbox/diff:
+    get:
+      tags: [ledger]
+      summary: Schema changes made on each of two branches since they split, and objects both changed. Read-only.
+      parameters:
+        - { name: a, in: query, required: true, schema: { type: string } }
+        - { name: b, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The diff.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  a: { type: string }
+                  b: { type: string }
+                  a_parent: { type: string }
+                  b_parent: { type: string }
+                  common_entries: { type: integer }
+                  fork_after_id: { type: integer }
+                  fork_after_at: { type: string, format: date-time }
+                  a_only: { type: array, items: { type: object } }
+                  b_only: { type: array, items: { type: object } }
+                  both_touched: { type: array, items: { type: object } }
+        "400": { description: a or b missing. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: No such branch. }
 
   /api/import:
     post:

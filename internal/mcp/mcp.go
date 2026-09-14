@@ -165,6 +165,20 @@ func toolList() []map[string]any {
 				"parent_session_id": str("the agent session that started this one"),
 				"dry_run":           map[string]any{"type": "boolean", "description": "only preview the policy rules; don't run anything"},
 			}, []string{"sql"}),
+		tool("impact",
+			"Before changing something, see what it would affect: the objects that depend on the table, view, index or column the statement changes (views — including views on views — foreign keys, indexes, triggers, row-level security policies, functions), which other running branches have it, which Blackbox policy rules it triggers, and a low/medium/high score with the reasons. Nothing is run. Pass sql, or object (and column).",
+			map[string]any{
+				"branch": str("branch name (default main)"),
+				"sql":    str("the DDL statement you plan to run"),
+				"object": str("a table, view or index name instead of sql"),
+				"column": str("a column of that object"),
+			}, nil),
+		tool("blackbox_diff",
+			"Compare two branches' Blackbox histories: where they split, the schema changes made only on each since, and the objects both changed (possible conflicts). Read-only; nothing is merged.",
+			map[string]any{
+				"a": str("first branch (e.g. main)"),
+				"b": str("second branch"),
+			}, []string{"a", "b"}),
 		tool("policy_check",
 			"Preview which Blackbox policy rules a DDL statement would trigger on a branch — warn or block — without running it. A blocked statement fails with SQLSTATE VDB01 (docs/policy-errors.md).",
 			map[string]any{
@@ -377,6 +391,43 @@ func runTool(name string, args json.RawMessage) (string, error) {
 		if res.Status == "blocked" || res.Status == "error" {
 			return "", jsonError(b) // isError, with the same JSON body
 		}
+		return string(b), nil
+
+	case "impact":
+		var a struct {
+			Branch string `json:"branch"`
+			SQL    string `json:"sql"`
+			Object string `json:"object"`
+			Column string `json:"column"`
+		}
+		_ = json.Unmarshal(args, &a)
+		stdout := os.Stdout // see branch_before_change
+		os.Stdout = os.Stderr
+		rep, err := branch.Impact(a.Branch, a.SQL, a.Object, a.Column)
+		os.Stdout = stdout
+		if err != nil {
+			return "", err
+		}
+		b, _ := json.MarshalIndent(rep, "", "  ")
+		return string(b), nil
+
+	case "blackbox_diff":
+		var a struct {
+			A string `json:"a"`
+			B string `json:"b"`
+		}
+		_ = json.Unmarshal(args, &a)
+		if a.A == "" || a.B == "" {
+			return "", fmt.Errorf("a and b are required")
+		}
+		stdout := os.Stdout // see branch_before_change
+		os.Stdout = os.Stderr
+		d, err := branch.DiffLedgers(a.A, a.B)
+		os.Stdout = stdout
+		if err != nil {
+			return "", err
+		}
+		b, _ := json.MarshalIndent(d, "", "  ")
 		return string(b), nil
 
 	case "policy_check":
