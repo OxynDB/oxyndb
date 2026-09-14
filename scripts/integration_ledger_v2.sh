@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Schema Ledger 2.0 integration checks. Run inside the Linux dev VM (ZFS + Docker):
+# Blackbox 2.0 integration checks. Run inside the Linux dev VM (ZFS + Docker):
 #   make integration-v2
 # Section 0 pins behaviour that must NOT change while 2.0 is built alongside it;
 # later sections test each phase. Complements scripts/integration_test.sh, which
@@ -151,6 +151,23 @@ gw "$KEY" main "CREATE TABLE v2off(x int)" >/dev/null
 OFFID="$(pg vec-main "SELECT max(id) FROM vdb.schema_ledger WHERE object_identity='public.v2off'")"
 assert_eq "kill switch disables capture" "$(pg vec-main "SELECT count(*) FROM vdb.ledger_ext WHERE ledger_id=$OFFID")" "0"
 pg vec-main "ALTER DATABASE vectoradb RESET vdb.v2" >/dev/null
+# …but it isn't a client's to flip: a session SET is honoured only for a superuser.
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2nocap; DROP TABLE IF EXISTS v2nocap_admin; DROP TABLE IF EXISTS v2nocap_su" >/dev/null
+gw "$KEY" main "SET vdb.v2 = 'off'; CREATE TABLE v2nocap(x int)" >/dev/null
+NCID="$(pg vec-main "SELECT max(id) FROM vdb.schema_ledger WHERE object_identity='public.v2nocap'")"
+assert_eq "a client's own SET vdb.v2 = 'off' does not skip capture" \
+  "$(pg vec-main "SELECT count(*) FROM vdb.ledger_ext WHERE ledger_id=${NCID:-0}")" "1"
+$S admin grant "$USER_EMAIL" --branch main >/dev/null 2>&1
+gw "$KEY" main "SET vdb.v2 = 'off'; CREATE TABLE v2nocap_admin(x int)" >/dev/null
+NCID="$(pg vec-main "SELECT max(id) FROM vdb.schema_ledger WHERE object_identity='public.v2nocap_admin'")"
+assert_eq "…nor does a vdb_admin member's" \
+  "$(pg vec-main "SELECT count(*) FROM vdb.ledger_ext WHERE ledger_id=${NCID:-0}")" "1"
+$S admin revoke "$USER_EMAIL" --branch main >/dev/null 2>&1
+pg vec-main "SET vdb.v2 = 'off'; CREATE TABLE v2nocap_su(x int)" >/dev/null
+NCID="$(pg vec-main "SELECT max(id) FROM vdb.schema_ledger WHERE object_identity='public.v2nocap_su'")"
+assert_eq "a superuser's session can still switch capture off" \
+  "$(pg vec-main "SELECT count(*) FROM vdb.ledger_ext WHERE ledger_id=${NCID:-0}")" "0"
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2nocap; DROP TABLE IF EXISTS v2nocap_admin; DROP TABLE IF EXISTS v2nocap_su" >/dev/null
 assert_eq "capture table is append-only" \
   "$(pgerr vec-main "DELETE FROM vdb.ledger_ext WHERE ledger_id=$CAPID" | grep -c 'append-only')" "1"
 assert_eq "clients cannot write capture rows" \
@@ -321,6 +338,171 @@ $S branch delete v2bb >/dev/null 2>&1
 assert_eq "the branch deletes like any other" "$(sudo docker inspect vec-v2bb >/dev/null 2>&1 || echo gone)" "gone"
 for b in v2bb-rest v2bb-time v2bb-x; do $S branch delete "$b" >/dev/null 2>&1; done
 pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2bb_keep; DROP TABLE IF EXISTS v2bb_old; DROP TABLE IF EXISTS v2bb_target; DROP TABLE IF EXISTS v2bb_after" >/dev/null
+
+echo "### 5. Blackbox names (aliases of the ledger command, routes and tools)"
+assert_eq "vdb blackbox verify matches vdb ledger verify" "$($S blackbox verify main 2>&1)" "$($S ledger verify main 2>&1)"
+assert_eq "vdb blackbox entries matches vdb ledger entries" "$($S blackbox entries --limit 5 2>&1)" "$($S ledger entries --limit 5 2>&1)"
+assert_eq "vdb blackbox integrity matches vdb ledger integrity" \
+  "$($S blackbox integrity main 2>&1 | head -1 | grep -o 'INTACT\|TAMPERED')" "$($S ledger integrity main 2>&1 | head -1 | grep -o 'INTACT\|TAMPERED')"
+assert_eq "REST /blackbox/verify matches /ledger/verify" \
+  "$(curl -sk -H "$AUTH" "$API/api/branches/main/blackbox/verify")" "$(curl -sk -H "$AUTH" "$API/api/branches/main/ledger/verify")"
+assert_eq "REST /blackbox keeps the ledger columns" \
+  "$(curl -sk -H "$AUTH" "$API/api/branches/main/blackbox?limit=1" | jcols)" \
+  "at,actor,actor_kind,tool,branch,command_tag,object_identity,statement,status,risk"
+assert_eq "REST /blackbox/entries answers" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' -H "$AUTH" "$API/api/branches/main/blackbox/entries?limit=1")" "200"
+assert_eq "REST /blackbox routes require auth like the originals" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' "$API/api/branches/main/blackbox/verify")" "401"
+assert_eq "MCP lists both the Blackbox and the original tool names" \
+  "$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | "$S" mcp 2>/dev/null | python3 -c 'import sys,json; n={t["name"] for t in json.load(sys.stdin)["result"]["tools"]}; print(all(x in n for x in ["verify_blackbox","blackbox_integrity","blackbox_entries","verify_ledger","ledger_integrity","ledger_entries"]))')" "True"
+assert_eq "MCP blackbox_integrity matches ledger_integrity" \
+  "$(mcp_call blackbox_integrity '{"branch":"main"}' | head -1 | grep -o 'INTACT\|TAMPERED')" "$(mcp_call ledger_integrity '{"branch":"main"}' | head -1 | grep -o 'INTACT\|TAMPERED')"
+assert_eq "MCP verify_blackbox matches verify_ledger" \
+  "$(mcp_call verify_blackbox '{"branch":"main"}')" "$(mcp_call verify_ledger '{"branch":"main"}')"
+
+echo "### 6. Blackbox policy gate (warn / block — docs/policy-errors.md)"
+# gwv: psql through the gateway with SQLSTATEs shown ("NOTICE:  VDB02: …").
+gwv() { PGPASSWORD="$1" psql "$GATEWAY/$2" -X -v VERBOSITY=verbose -tAc "$3" 2>&1; }
+detail() { grep -m1 '^DETAIL:' | sed 's/^DETAIL:  //'; }
+reset_rules() {
+  for r in alter-column-type drop-column drop-index grant-to-public; do
+    $S policy warn "$r" >/dev/null 2>&1; $S policy enable "$r" >/dev/null 2>&1
+  done
+  $S policy remove v2pol-custom >/dev/null 2>&1
+  $S admin revoke "$USER_EMAIL" >/dev/null 2>&1
+}
+reset_rules
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2pol; DROP TABLE IF EXISTS v2pol_forbidden; DROP TABLE IF EXISTS v2pol_ok" >/dev/null
+gw "$KEY" main "CREATE TABLE v2pol(a int, b int, c text)" >/dev/null
+
+assert_eq "the four built-in rules are installed, all warn" \
+  "$(pg vec-main "SELECT string_agg(rule_id||':'||action, ',' ORDER BY rule_id) FROM vdb.policy_rules WHERE builtin")" \
+  "alter-column-type:warn,drop-column:warn,drop-index:warn,grant-to-public:warn"
+assert_eq "the gate fires after the guardrail (name order)" \
+  "$(pg vec-main "SELECT string_agg(evtname, ',' ORDER BY evtname) FROM pg_event_trigger WHERE evtname IN ('vdb_guard_start','vdb_policy_start')")" \
+  "vdb_guard_start,vdb_policy_start"
+assert_eq "vdb policy lists the rules" "$($S policy list | grep -c 'alter-column-type\|drop-column\|drop-index\|grant-to-public')" "4"
+
+EVB="$(pg vec-main "SELECT coalesce(max(id),0) FROM vdb.ledger_policy_evaluations")"
+OUT="$(gwv "$KEY" main "ALTER TABLE v2pol ALTER COLUMN a TYPE bigint")"
+assert_eq "warn: the statement runs" \
+  "$(pg vec-main "SELECT data_type FROM information_schema.columns WHERE table_name='v2pol' AND column_name='a'")" "bigint"
+assert_eq "warn: a NOTICE with SQLSTATE VDB02" "$(echo "$OUT" | grep -c '^NOTICE:  VDB02: Blackbox policy warning: .*(rule alter-column-type)')" "1"
+assert_eq "warn: DETAIL is the contract JSON" \
+  "$(echo "$OUT" | detail | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["v"], d["rule_id"], d["action"], d["command"], d["blackbox_id"], d["override"], isinstance(d["evaluation_id"], int))')" \
+  "1 alter-column-type warn ALTER TABLE None None True"
+assert_eq "warn: the evaluation is recorded" \
+  "$(pg vec-main "SELECT count(*) FROM vdb.ledger_policy_evaluations WHERE id > $EVB AND rule_id='alter-column-type' AND action='warn'")" "1"
+gw "$KEY" main "CREATE INDEX v2pol_b ON v2pol(b)" >/dev/null
+assert_eq "warn: DROP INDEX" "$(gwv "$KEY" main "DROP INDEX v2pol_b" | grep -c 'VDB02: .*(rule drop-index)')" "1"
+assert_eq "warn: GRANT … TO PUBLIC" "$(gwv "$KEY" main "GRANT SELECT ON v2pol TO PUBLIC" | grep -c 'VDB02: .*(rule grant-to-public)')" "1"
+assert_eq "an ordinary change triggers nothing" "$(gwv "$KEY" main "ALTER TABLE v2pol ADD COLUMN d int" | grep -c 'VDB0')" "0"
+assert_eq "SET/DROP DEFAULT is not taken for dropping a column" \
+  "$(gwv "$KEY" main "ALTER TABLE v2pol ALTER COLUMN d SET DEFAULT 1; ALTER TABLE v2pol ALTER COLUMN d DROP DEFAULT" | grep -c 'drop-column')" "0"
+
+$S policy block drop-column >/dev/null 2>&1
+assert_eq "vdb policy block sets the action" "$(pg vec-main "SELECT action FROM vdb.policy_rules WHERE rule_id='drop-column'")" "block"
+OUT="$(gwv "$KEY" main "ALTER TABLE v2pol DROP COLUMN c")"
+assert_eq "block: an ERROR with SQLSTATE VDB01" "$(echo "$OUT" | grep -c '^ERROR:  VDB01: Blackbox policy: .*(rule drop-column)')" "1"
+assert_eq "block: the statement did not run" \
+  "$(pg vec-main "SELECT count(*) FROM information_schema.columns WHERE table_name='v2pol' AND column_name='c'")" "1"
+BD="$(echo "$OUT" | detail)"
+assert_eq "block: DETAIL is the contract JSON" \
+  "$(echo "$BD" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["v"], d["rule_id"], d["action"], d["override"], d["impact"], isinstance(d["evaluation_id"], int), isinstance(d["blackbox_id"], int))')" \
+  "1 drop-column block vdb_admin None True True"
+BBID="$(echo "$BD" | python3 -c 'import sys,json; print(json.load(sys.stdin)["blackbox_id"])' 2>/dev/null)"
+assert_eq "block: recorded as a BLOCKED Blackbox entry (risk policy) that survived the rollback" \
+  "$(pg vec-main "SELECT status||'/'||risk||'/'||command_tag FROM vdb.schema_ledger WHERE id=${BBID:-0}")" "BLOCKED/policy/ALTER TABLE"
+assert_eq "block: its evaluation survived the rollback" "$(pg vec-main "SELECT action FROM vdb.ledger_policy_evaluations WHERE blackbox_id=${BBID:-0}")" "block"
+assert_eq "block: the HINT names the override" "$(echo "$OUT" | grep -c "^HINT:  .*vdb.policy_allow = 'drop-column'")" "1"
+assert_eq "block: a non-admin's vdb.policy_allow is ignored" \
+  "$(gwv "$KEY" main "SET vdb.policy_allow = 'drop-column'; ALTER TABLE v2pol DROP COLUMN c" | grep -c 'VDB01')" "1"
+assert_eq "block: turning vdb.v2 off in the session does not bypass it" \
+  "$(gwv "$KEY" main "SET vdb.v2 = 'off'; ALTER TABLE v2pol DROP COLUMN c" | grep -c 'VDB01')" "1"
+assert_eq "the hash chain still verifies with policy BLOCKED entries" \
+  "$(curl -sk -H "$AUTH" "$API/api/branches/main/ledger/verify" | python3 -c 'import sys,json; print(json.load(sys.stdin)["rows"][0][2])')" "0"
+
+$S admin grant "$USER_EMAIL" --branch main >/dev/null 2>&1
+assert_eq "admin: vdb.allow_destructive does not override a policy rule" \
+  "$(gwv "$KEY" main "SET vdb.allow_destructive = on; ALTER TABLE v2pol DROP COLUMN c" | grep -c 'VDB01')" "1"
+EVB="$(pg vec-main "SELECT coalesce(max(id),0) FROM vdb.ledger_policy_evaluations")"
+OUT="$(gwv "$KEY" main "SET vdb.policy_allow = 'drop-column'; ALTER TABLE v2pol DROP COLUMN c")"
+assert_eq "admin: vdb.policy_allow overrides that rule" \
+  "$(pg vec-main "SELECT count(*) FROM information_schema.columns WHERE table_name='v2pol' AND column_name='c'")|$(echo "$OUT" | grep -c 'VDB01')" "0|0"
+assert_eq "admin: the override is recorded as allowed" \
+  "$(pg vec-main "SELECT count(*) FROM vdb.ledger_policy_evaluations WHERE id > $EVB AND rule_id='drop-column' AND action='allowed'")" "1"
+assert_eq "admin: the change's capture row records the override" \
+  "$(pg vec-main "SELECT e.override_used FROM vdb.ledger_ext e JOIN vdb.schema_ledger s ON s.id=e.ledger_id WHERE s.object_identity='public.v2pol' AND s.command_tag='ALTER TABLE' ORDER BY s.id DESC LIMIT 1")" "t"
+
+assert_eq "REST: rules listed" \
+  "$(curl -sk -H "$AUTH" "$API/api/branches/main/policies" | python3 -c 'import sys,json; print(sum(1 for r in json.load(sys.stdin) if r["builtin"]))')" "4"
+assert_eq "REST: an admin can change a rule (200)" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' -X PUT -H "$AUTH" -d '{"action":"warn"}' "$API/api/branches/main/policies/drop-column")" "200"
+assert_eq "REST: the change took effect and names who made it" \
+  "$(pg vec-main "SELECT action||'/'||updated_by FROM vdb.policy_rules WHERE rule_id='drop-column'")" "warn/$USER_EMAIL"
+assert_eq "REST: unknown rule is 404" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' -X PUT -H "$AUTH" -d '{"action":"warn"}' "$API/api/branches/main/policies/nope")" "404"
+assert_eq "REST: a built-in rule can't be removed (409)" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' -X DELETE -H "$AUTH" "$API/api/branches/main/policies/drop-index")" "409"
+$S admin revoke "$USER_EMAIL" --branch main >/dev/null 2>&1
+assert_eq "REST: a non-admin can't change a rule (403)" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' -X PUT -H "$AUTH" -d '{"action":"block"}' "$API/api/branches/main/policies/drop-column")" "403"
+assert_eq "REST: check previews matches without running" \
+  "$(curl -sk -X POST -H "$AUTH" -d '{"sql":"ALTER TABLE v2pol DROP COLUMN b"}' "$API/api/branches/main/policies/check" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["command"], ",".join(m["rule_id"] for m in d["matches"]))')" \
+  "ALTER TABLE drop-column"
+assert_eq "REST: evaluations listed" \
+  "$(curl -sk -H "$AUTH" "$API/api/branches/main/policies/evaluations?limit=5" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)) > 0)')" "True"
+
+assert_eq "CLI check shows the matching rule" "$($S policy check "ALTER TABLE v2pol DROP COLUMN b" | grep -c 'WARN.*drop-column')" "1"
+$S policy block drop-column >/dev/null 2>&1
+assert_eq "CLI check exits 1 when a rule would block" "$($S policy check "ALTER TABLE v2pol DROP COLUMN b" >/dev/null 2>&1; echo $?)" "1"
+assert_eq "MCP policy_check" "$(mcp_call policy_check '{"sql":"ALTER TABLE v2pol DROP COLUMN b"}' | grep -c 'BLOCK.*drop-column')" "1"
+assert_eq "clients can't change rules directly" "$(gw "$KEY" main "UPDATE vdb.policy_rules SET action='warn'" | grep -c 'permission denied')" "1"
+
+# Fail-safe: when an evaluation can't be recorded, a warn rule never blocks, and
+# a block still refuses (with evaluation_id null).
+pg vec-main "ALTER TABLE vdb.ledger_policy_evaluations ADD CONSTRAINT v2pol_fail CHECK (false) NOT VALID" >/dev/null
+OUT="$(gwv "$KEY" main "ALTER TABLE v2pol ALTER COLUMN b TYPE bigint")"
+assert_eq "fail-safe: a warn rule that can't record lets the statement run" \
+  "$(pg vec-main "SELECT data_type FROM information_schema.columns WHERE table_name='v2pol' AND column_name='b'")|$(echo "$OUT" | grep -c 'evaluation skipped')" "bigint|1"
+OUT="$(gwv "$KEY" main "ALTER TABLE v2pol DROP COLUMN b")"
+assert_eq "fail-safe: a block still refuses, evaluation_id null" \
+  "$(echo "$OUT" | grep -c 'VDB01')|$(echo "$OUT" | detail | python3 -c 'import sys,json; print(json.load(sys.stdin)["evaluation_id"])')" "1|None"
+$S policy warn drop-column >/dev/null 2>&1
+pg vec-main "ALTER TABLE vdb.ledger_policy_evaluations DROP CONSTRAINT v2pol_fail" >/dev/null
+
+$S policy block drop-column >/dev/null 2>&1
+pg vec-main "ALTER EVENT TRIGGER vdb_policy_start DISABLE" >/dev/null
+assert_eq "kill switch: a disabled gate doesn't block" "$(gwv "$KEY" main "ALTER TABLE v2pol DROP COLUMN b" | grep -c 'VDB0')" "0"
+pg vec-main "ALTER EVENT TRIGGER vdb_policy_start ENABLE" >/dev/null
+$S policy warn drop-column >/dev/null 2>&1
+
+HB="$(pg vec-main "SELECT coalesce(max(id),0) FROM vdb.policy_rule_history")"
+$S policy add v2pol-custom --command "CREATE TABLE" --pattern 'v2pol_forbidden' --block --reason "test rule" >/dev/null 2>&1
+assert_eq "custom block rule refuses a matching statement" \
+  "$(gwv "$KEY" main "CREATE TABLE v2pol_forbidden(x int)" | grep -c 'VDB01: .*(rule v2pol-custom)')" "1"
+assert_eq "…and nothing else" "$(gwv "$KEY" main "CREATE TABLE v2pol_ok(x int)" | grep -c 'VDB0')" "0"
+$S policy disable v2pol-custom >/dev/null 2>&1
+assert_eq "a disabled rule doesn't fire" "$(gwv "$KEY" main "CREATE TABLE v2pol_forbidden(x int)" | grep -c 'VDB0')" "0"
+assert_eq "rule changes are recorded with who made them" \
+  "$(pg vec-main "SELECT string_agg(change||':'||changed_by, ',' ORDER BY id) FROM vdb.policy_rule_history WHERE id > $HB AND rule_id='v2pol-custom'")" \
+  "insert:vdb-cli,update:vdb-cli"
+assert_eq "an invalid pattern is refused" \
+  "$($S policy add v2pol-bad --command "CREATE TABLE" --pattern '(' --reason x 2>&1 | grep -c 'invalid pattern')" "1"
+assert_eq "a built-in rule can't be removed" "$($S policy remove drop-index 2>&1 | grep -c 'built-in')" "1"
+assert_eq "evaluations are append-only" \
+  "$(sudo docker exec vec-main psql -U vectoradb -d vectoradb -tAc "DELETE FROM vdb.ledger_policy_evaluations" 2>&1 | grep -c 'append-only')" "1"
+
+assert_eq "the guardrail's DROP TABLE error is unchanged (42501) and adds no policy notice" \
+  "$(gwv "$KEY" main "DROP TABLE v2pol" | grep -c '^ERROR:  42501: VectoraDB guardrail: DROP TABLE is blocked by policy (set vdb.allow_destructive=on to override)')|$(gwv "$KEY" main "DROP TABLE v2pol" | grep -c 'VDB0')" \
+  "1|0"
+$S policy block drop-index >/dev/null 2>&1
+$S blackbox upgrade main >/dev/null 2>&1
+assert_eq "reinstalling keeps rule changes" "$(pg vec-main "SELECT action FROM vdb.policy_rules WHERE rule_id='drop-index'")" "block"
+assert_eq "reinstalling keeps one gate trigger" "$(pg vec-main "SELECT count(*) FROM pg_event_trigger WHERE evtname='vdb_policy_start'")" "1"
+
+reset_rules
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2pol; DROP TABLE IF EXISTS v2pol_forbidden; DROP TABLE IF EXISTS v2pol_ok" >/dev/null
 
 echo
 echo "==== ${PASS} passed, ${FAIL} failed ===="

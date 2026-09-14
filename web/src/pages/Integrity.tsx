@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { branchBeforeEntry, createCheckpoint, exportLedgerUrl, getBranches, getIntegrity, getLedgerEntries, type Branch, type BranchBeforeResult, type IntegrityReport, type LedgerEntry } from '../api'
 
-// Ledger integrity: checks a branch's Schema Ledger against its checkpoint
+// Blackbox integrity: checks a branch's Blackbox record against its checkpoint
 // anchors — kept outside the database — and creates new checkpoints.
 export default function Integrity() {
   const [branches, setBranches] = useState<Branch[]>([])
@@ -38,7 +38,7 @@ export default function Integrity() {
     try {
       const r = await createCheckpoint(branch)
       setMsg(r.checkpoint
-        ? `Checkpoint #${r.checkpoint.checkpoint_id} anchored ledger ids ${r.checkpoint.from_id}–${r.checkpoint.to_id} (${r.checkpoint.entry_count} entries).`
+        ? `Checkpoint #${r.checkpoint.checkpoint_id} anchored entries ${r.checkpoint.from_id}–${r.checkpoint.to_id} (${r.checkpoint.entry_count} entries).`
         : 'Nothing new to checkpoint.')
     } catch (e) {
       setErr((e as Error).message)
@@ -50,7 +50,7 @@ export default function Integrity() {
 
   const branchBefore = async () => {
     const id = Number(entryId)
-    if (!Number.isInteger(id) || id <= 0) { setBeforeErr('Enter a ledger entry id.'); return }
+    if (!Number.isInteger(id) || id <= 0) { setBeforeErr('Enter a Blackbox entry id.'); return }
     setRestoring(true); setBefore(null); setBeforeErr('')
     try {
       setBefore(await branchBeforeEntry('main', id, beforeName.trim() || undefined))
@@ -73,9 +73,9 @@ export default function Integrity() {
 
   return (
     <div className="fade-up">
-      <h1>Ledger integrity</h1>
+      <h1>Blackbox integrity</h1>
       <p className="lead" style={{ marginTop: -2 }}>
-        Checkpoints anchor the ledger outside the database, so rewritten, deleted or wiped history is caught — even when
+        Checkpoints anchor the Blackbox record outside the database, so rewritten, deleted or wiped history is caught — even when
         someone could edit the database itself. Anyone can re-check independently with the open-source <code>vdb-verify</code>.
       </p>
 
@@ -92,12 +92,12 @@ export default function Integrity() {
       <div className="panel" style={{ marginTop: 18 }}>
         <h3 style={{ marginTop: 0 }}>Branch from before a change</h3>
         <p className="muted" style={{ marginTop: 0 }}>
-          Creates a new branch holding <code>main</code> exactly as it was just before a ledger entry — select one below,
-          or find its id with <code>vdb ledger entries</code>. <code>main</code> is not modified. It restores a base backup and replays WAL, so it takes a
+          Creates a new branch holding <code>main</code> exactly as it was just before a Blackbox entry — select one below,
+          or find its id with <code>vdb blackbox entries</code>. <code>main</code> is not modified. It restores a base backup and replays WAL, so it takes a
           few minutes, and needs a base backup taken before the change.
         </p>
         <div className="row" style={{ flexWrap: 'wrap', gap: 10 }}>
-          <input placeholder="Ledger entry id" inputMode="numeric" value={entryId}
+          <input placeholder="Entry id" inputMode="numeric" value={entryId}
             onChange={e => setEntryId(e.target.value.replace(/[^0-9]/g, ''))} style={{ width: 150 }} />
           <input placeholder={entryId ? `main-before-${entryId}` : 'New branch name (optional)'} value={beforeName}
             onChange={e => setBeforeName(e.target.value)} style={{ width: 220 }} />
@@ -153,12 +153,12 @@ export default function Integrity() {
             <span className="muted">
               {report.intact
                 ? 'Every anchored entry still matches its anchor.'
-                : 'The ledger no longer matches what was anchored — see the problems below.'}
+                : 'The Blackbox record no longer matches what was anchored — see the problems below.'}
             </span>
           </div>
 
           <div className="row" style={{ flexWrap: 'wrap', gap: 10, marginTop: 14 }}>
-            {stat('Ledger entries', report.rows)}
+            {stat('Entries', report.rows)}
             {stat('Hash-chained', report.chained_rows)}
             {stat('Checkpoints', report.checkpoints)}
             {stat('Anchored entries', report.anchored_rows)}

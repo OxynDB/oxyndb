@@ -11,7 +11,7 @@ import (
 	"github.com/vectoradb/vectoradb/internal/branch"
 )
 
-// ledgerV2Cmd handles the Schema Ledger 2.0 subcommands of `vdb ledger`:
+// ledgerV2Cmd handles the Blackbox 2.0 subcommands of `vdb ledger`:
 //
 //	vdb ledger checkpoint [branch]   anchor new entries outside the database
 //	vdb ledger integrity [branch]    check the ledger against its anchors

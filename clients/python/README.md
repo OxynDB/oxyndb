@@ -29,8 +29,8 @@ db.branches()
 db.create_branch("qa"); db.delete_branch("qa")
 db.suspend("qa"); db.resume("qa")
 db.query("qa", "select now()")
-db.ledger("qa", kind="agent", limit=20)   # who changed what
-db.verify_ledger("qa")                     # tamper-evidence check
+db.blackbox("qa", kind="agent", limit=20) # who changed what (Blackbox)
+db.verify_blackbox("qa")                   # tamper-evidence check (ledger()/verify_ledger() still work)
 ```
 
 The full API is described by the OpenAPI spec, served at `GET /api/openapi.yaml`

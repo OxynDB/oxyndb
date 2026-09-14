@@ -12,7 +12,7 @@ import (
 	"github.com/vectoradb/vectoradb/internal/branch"
 )
 
-// registerLedgerV2 mounts the Schema Ledger 2.0 endpoints (behind auth):
+// registerLedgerV2 mounts the Blackbox 2.0 endpoints (behind auth):
 //
 //	GET  /api/branches/{name}/ledger/integrity   check the ledger against its anchors
 //	POST /api/branches/{name}/ledger/checkpoint  anchor new entries now

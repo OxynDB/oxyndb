@@ -56,12 +56,13 @@ func Serve(addr string) error {
 
 	api := http.NewServeMux()
 	registerAPI(api)
-	registerPipelines(api, store) // /api/pipelines* (ETL)
-	registerLedgerV2(api)         // /api/branches/{name}/ledger/{integrity,checkpoint,export,entries,{id}/branch}
-	store.MountKeys(api)          // /api/keys (protected via Authn below)
-	mux.Handle("/api/", store.Authn(api))
+	registerPipelines(api, store)                        // /api/pipelines* (ETL)
+	registerPolicy(api)                                  // /api/branches/{name}/policies* (Blackbox policy gate)
+	registerLedgerV2(api)                                // /api/branches/{name}/ledger/{integrity,checkpoint,export,entries,{id}/branch}
+	store.MountKeys(api)                                 // /api/keys (protected via Authn below)
+	mux.Handle("/api/", store.Authn(blackboxAlias(api))) // …/blackbox… also reaches …/ledger… routes
 
-	// Schema Ledger 2.0: anchor new ledger entries outside the database on a schedule.
+	// Blackbox 2.0: anchor new ledger entries outside the database on a schedule.
 	branch.StartCheckpointer()
 
 	handler := cors(store.WebOrigin())(logging(mux))
@@ -258,7 +259,7 @@ func registerAPI(mux *http.ServeMux) {
 		send("done", map[string]any{"status": "imported", "target": target, "tables": branch.TableCount(target)})
 	})
 
-	// Schema ledger (RECORD layer): the queryable history of DDL changes on a
+	// Blackbox (RECORD layer): the queryable history of DDL changes on a
 	// branch, filterable by actor/table/risk/status/kind/time.
 	mux.HandleFunc("GET /api/branches/{name}/ledger", func(w http.ResponseWriter, r *http.Request) {
 		addr, err := branch.EnsureRunning(r.PathValue("name"))
@@ -337,7 +338,7 @@ func runQuery(addr, sql, actor string) map[string]any {
 	}
 	defer conn.Close(ctx)
 
-	// Attribute console DDL in the schema ledger to the signed-in user — our own
+	// Attribute console DDL in the Blackbox to the signed-in user — our own
 	// tool should not be the blind spot. Reads pass actor="" and skip this.
 	if actor != "" {
 		if _, err := conn.Exec(ctx,

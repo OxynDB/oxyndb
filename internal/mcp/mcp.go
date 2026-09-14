@@ -3,7 +3,7 @@
 // Package mcp exposes VectoraDB's agent-branch operations over the Model Context
 // Protocol (MCP), so an AI agent framework can — through one standard interface —
 // get its own disposable database, run SQL, see exactly what it changed (from
-// the tamper-evident schema ledger), and throw the database away.
+// the tamper-evident Blackbox), and throw the database away.
 //
 // It speaks MCP over stdio: newline-delimited JSON-RPC 2.0 on stdin/stdout.
 // stdout carries the protocol, so all logging goes to stderr.
@@ -117,7 +117,7 @@ func tool(name, desc string, props map[string]any, required []string) map[string
 func str(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
 
 func toolList() []map[string]any {
-	return []map[string]any{
+	tools := []map[string]any{
 		tool("create_branch",
 			"Create a fresh, isolated Postgres database branch for an agent (a copy-on-write clone of main) and return its connection string (DSN).",
 			map[string]any{"agent_id": str("identifier for the agent")}, []string{"agent_id"}),
@@ -130,31 +130,70 @@ func toolList() []map[string]any {
 				"sql":    str("the SQL to run"),
 			}, []string{"sql"}),
 		tool("changes",
-			"Show recent schema changes (DDL) on a branch — who changed what, when, and with which tool — from the tamper-evident ledger.",
+			"Show recent schema changes (DDL) on a branch — who changed what, when, and with which tool — from Blackbox, the tamper-evident record of schema changes.",
 			map[string]any{
 				"branch": str("branch name (default main)"),
 				"limit":  map[string]any{"type": "integer", "description": "max rows (default 50)"},
 			}, nil),
 		tool("verify_ledger",
-			"Verify a branch's schema ledger has not been tampered with (recomputes the hash chain).",
+			"Verify a branch's Blackbox has not been tampered with (recomputes the hash chain).",
 			map[string]any{"branch": str("branch name (default main)")}, nil),
 		tool("ledger_integrity",
-			"Check a branch's schema ledger against its checkpoint anchors, which are stored outside the database — catches edited, deleted or wiped history even if the hash chain was rewritten.",
+			"Check a branch's Blackbox against its checkpoint anchors, which are stored outside the database — catches edited, deleted or wiped history even if the hash chain was rewritten.",
 			map[string]any{"branch": str("branch name (default main)")}, nil),
 		tool("ledger_entries",
-			"List a branch's newest schema ledger entries with their ids, newest first — pass an id to branch_before_change.",
+			"List a branch's newest Blackbox entries with their ids, newest first — pass an id to branch_before_change.",
 			map[string]any{
 				"branch": str("branch name (default main)"),
 				"limit":  map[string]any{"type": "integer", "description": "max rows (default 50)"},
 			}, nil),
-		tool("branch_before_change",
-			"Create a new branch holding main exactly as it was just before a schema ledger entry (its id from `ledger_entries`) — to inspect or recover from a bad change. main is not modified. Takes a few minutes (base backup + WAL replay).",
+		tool("policy_check",
+			"Preview which Blackbox policy rules a DDL statement would trigger on a branch — warn or block — without running it. A blocked statement fails with SQLSTATE VDB01 (docs/policy-errors.md).",
 			map[string]any{
-				"entry_id": map[string]any{"type": "integer", "description": "ledger entry id"},
+				"branch": str("branch name (default main)"),
+				"sql":    str("the DDL statement to check"),
+			}, []string{"sql"}),
+		tool("branch_before_change",
+			"Create a new branch holding main exactly as it was just before a Blackbox entry (its id from `blackbox_entries` or `ledger_entries`) — to inspect or recover from a bad change. main is not modified. Takes a few minutes (base backup + WAL replay).",
+			map[string]any{
+				"entry_id": map[string]any{"type": "integer", "description": "Blackbox entry id"},
 				"branch":   str("source branch (only main is supported)"),
 				"name":     str("new branch name (default main-before-<id>)"),
 			}, []string{"entry_id"}),
 	}
+	// The Blackbox names of the ledger tools, listed alongside the originals.
+	for _, a := range blackboxToolNames {
+		for _, t := range tools {
+			if t["name"] == a.ledger {
+				alias := map[string]any{}
+				for k, v := range t {
+					alias[k] = v
+				}
+				alias["name"] = a.blackbox
+				alias["description"] = t["description"].(string) + " Same as " + a.ledger + "."
+				tools = append(tools, alias)
+			}
+		}
+	}
+	return tools
+}
+
+// blackboxToolNames maps each Blackbox tool name to the ledger tool it runs.
+// Blackbox is the product name; the original tool names keep working.
+var blackboxToolNames = []struct{ blackbox, ledger string }{
+	{"verify_blackbox", "verify_ledger"},
+	{"blackbox_integrity", "ledger_integrity"},
+	{"blackbox_entries", "ledger_entries"},
+}
+
+// resolveTool returns the ledger tool a Blackbox tool name stands for, or name.
+func resolveTool(name string) string {
+	for _, a := range blackboxToolNames {
+		if name == a.blackbox {
+			return a.ledger
+		}
+	}
+	return name
 }
 
 func callTool(params json.RawMessage) map[string]any {
@@ -174,7 +213,7 @@ func callTool(params json.RawMessage) map[string]any {
 }
 
 func runTool(name string, args json.RawMessage) (string, error) {
-	switch name {
+	switch resolveTool(name) {
 	case "create_branch":
 		var a struct {
 			AgentID string `json:"agent_id"`
@@ -269,6 +308,18 @@ func runTool(name string, args json.RawMessage) (string, error) {
 			return "", err
 		}
 		return branch.FormatLedgerEntries(entries), nil
+
+	case "policy_check":
+		var a struct {
+			Branch string `json:"branch"`
+			SQL    string `json:"sql"`
+		}
+		_ = json.Unmarshal(args, &a)
+		tag, matches, err := branch.PolicyCheck(a.Branch, a.SQL)
+		if err != nil {
+			return "", err
+		}
+		return branch.FormatPolicyCheck(tag, matches), nil
 
 	case "branch_before_change":
 		var a struct {

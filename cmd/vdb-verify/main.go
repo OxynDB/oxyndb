@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Command vdb-verify independently checks a VectoraDB Schema Ledger against its
+// Command vdb-verify independently checks a VectoraDB Blackbox against its
 // checkpoint anchors.
 //
 // It trusts neither the database nor the VectoraDB engine: it recomputes every

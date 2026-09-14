@@ -10,7 +10,9 @@ info:
   version: "0.6"
   description: >
     Control-plane and Agent Branch APIs for VectoraDB — serverless PostgreSQL
-    with instant branching, time-travel, and a tamper-evident Schema Ledger.
+    with instant branching, time-travel, and Blackbox — a tamper-evident record of
+    every schema change. Every `/api/branches/{name}/ledger…` path is also served
+    at `/api/branches/{name}/blackbox…`.
     All endpoints are served over TLS. Authenticate with an API key
     (`vdb_…`) as a Bearer token.
   license:
@@ -26,6 +28,11 @@ tags:
   - name: status
   - name: branches
   - name: ledger
+    description: >-
+      Blackbox, the record of every schema change. Each path below is also served with
+      `/blackbox` in place of `/ledger` (for example /api/branches/{name}/blackbox/verify).
+  - name: policies
+    description: The Blackbox policy gate — rules checked on every schema change before it runs (docs/policy-errors.md).
   - name: pipelines
   - name: import
   - name: keys
@@ -115,7 +122,7 @@ paths:
   /api/branches/{name}/ledger:
     get:
       tags: [ledger]
-      summary: The branch's schema-ledger history (filterable).
+      summary: The branch's Blackbox history (filterable).
       parameters:
         - { $ref: "#/components/parameters/BranchName" }
         - { name: actor, in: query, schema: { type: string } }
@@ -127,14 +134,14 @@ paths:
         - { name: offset, in: query, schema: { type: integer } }
       responses:
         "200":
-          description: Ledger rows.
+          description: Blackbox rows.
           content: { application/json: { schema: { $ref: "#/components/schemas/QueryResult" } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /api/branches/{name}/ledger/verify:
     get:
       tags: [ledger]
-      summary: Recompute the ledger's hash chain and report whether it is intact.
+      summary: Recompute the Blackbox hash chain and report whether it is intact.
       parameters: [{ $ref: "#/components/parameters/BranchName" }]
       responses:
         "200":
@@ -145,7 +152,7 @@ paths:
   /api/branches/{name}/ledger/integrity:
     get:
       tags: [ledger]
-      summary: Check the ledger against its checkpoint anchors, which are stored outside the database.
+      summary: Check the Blackbox record against its checkpoint anchors, which are stored outside the database.
       description: >
         Detects edited, deleted or wiped history even when the in-database hash chain was
         rewritten to hide it. Rows written after the last checkpoint are only hash-chain checked.
@@ -173,7 +180,7 @@ paths:
   /api/branches/{name}/ledger/checkpoint:
     post:
       tags: [ledger]
-      summary: Anchor the ledger entries added since the last checkpoint.
+      summary: Anchor the Blackbox entries added since the last checkpoint.
       parameters: [{ $ref: "#/components/parameters/BranchName" }]
       responses:
         "200":
@@ -206,7 +213,7 @@ paths:
   /api/branches/{name}/ledger/export:
     get:
       tags: [ledger]
-      summary: Every ledger entry with its capture columns, one JSON document per line.
+      summary: Every Blackbox entry with its capture columns, one JSON document per line.
       description: The input vdb-verify checks offline with --export.
       parameters: [{ $ref: "#/components/parameters/BranchName" }]
       responses:
@@ -218,7 +225,7 @@ paths:
   /api/branches/{name}/ledger/entries:
     get:
       tags: [ledger]
-      summary: Newest ledger entries with their ids, newest first.
+      summary: Newest Blackbox entries with their ids, newest first.
       description: The ids are what POST /api/branches/{name}/ledger/{id}/branch takes.
       parameters:
         - { $ref: "#/components/parameters/BranchName" }
@@ -245,14 +252,14 @@ paths:
   /api/branches/{name}/ledger/{id}/branch:
     post:
       tags: [ledger]
-      summary: Create a branch holding main as it was just before a ledger entry.
+      summary: Create a branch holding main as it was just before a Blackbox entry.
       description: >-
         Restores the newest base backup that finished before the entry and replays archived WAL up to,
-        but not including, the entry's transaction (or its time, for entries recorded before Schema
-        Ledger 2.0 capture). Synchronous; typically takes a few minutes. Only main can be the source.
+        but not including, the entry's transaction (or its time, for entries recorded before Blackbox 2.0
+        capture). Synchronous; typically takes a few minutes. Only main can be the source.
       parameters:
         - { $ref: "#/components/parameters/BranchName" }
-        - { name: id, in: path, required: true, schema: { type: integer, format: int64 }, description: Ledger entry id }
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 }, description: Blackbox entry id }
       requestBody:
         required: false
         content:
@@ -282,9 +289,99 @@ paths:
                   seconds: { type: integer }
         "400": { description: Invalid entry id, name, source branch, or a BLOCKED entry. }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { description: No such ledger entry. }
+        "404": { description: No such Blackbox entry. }
         "409": { description: A branch with that name already exists. }
         "422": { description: No base backup finished before the entry. }
+
+  /api/branches/{name}/policies:
+    get:
+      tags: [policies]
+      summary: The branch's policy rules.
+      parameters: [{ $ref: "#/components/parameters/BranchName" }]
+      responses:
+        "200":
+          description: Rules.
+          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/PolicyRule" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [policies]
+      summary: Add a rule (vdb_admin only).
+      parameters: [{ $ref: "#/components/parameters/BranchName" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/PolicyRule" } } }
+      responses:
+        "201": { description: Added. }
+        "400": { description: Invalid rule (id, command tag, action, reason or pattern). }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: The signed-in user is not a vdb_admin member on this branch. }
+        "409": { description: A rule with that id exists. }
+
+  /api/branches/{name}/policies/{rule}:
+    put:
+      tags: [policies]
+      summary: Change a rule's action and/or whether it is enabled (vdb_admin only).
+      parameters:
+        - { $ref: "#/components/parameters/BranchName" }
+        - { name: rule, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                action: { type: string, enum: [warn, block] }
+                enabled: { type: boolean }
+      responses:
+        "200": { description: Changed. }
+        "400": { description: Nothing or something invalid to change. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: Not a vdb_admin member. }
+        "404": { description: No such rule. }
+    delete:
+      tags: [policies]
+      summary: Remove a custom rule (vdb_admin only; built-in rules can only be disabled).
+      parameters:
+        - { $ref: "#/components/parameters/BranchName" }
+        - { name: rule, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Removed. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: Not a vdb_admin member. }
+        "404": { description: No such rule. }
+        "409": { description: Built-in rule. }
+
+  /api/branches/{name}/policies/check:
+    post:
+      tags: [policies]
+      summary: Preview the rules a statement would trigger, without running it.
+      parameters: [{ $ref: "#/components/parameters/BranchName" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, properties: { sql: { type: string } }, required: [sql] } } }
+      responses:
+        "200":
+          description: The command tag assumed and the matching rules (blocks first), as contract v1 objects.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  command: { type: string }
+                  matches: { type: array, items: { $ref: "#/components/schemas/PolicyDetail" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/branches/{name}/policies/evaluations:
+    get:
+      tags: [policies]
+      summary: Recent warnings, blocks and overrides, newest first.
+      parameters:
+        - { $ref: "#/components/parameters/BranchName" }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 1000 } }
+      responses:
+        "200": { description: Evaluations., content: { application/json: { schema: { type: array, items: { type: object } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
   /api/import:
     post:
@@ -422,6 +519,35 @@ components:
     Unauthorized:
       description: Missing or invalid API key.
   schemas:
+    PolicyRule:
+      type: object
+      required: [rule_id, command_tag, reason]
+      properties:
+        rule_id: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,62}$" }
+        command_tag: { type: string, example: ALTER TABLE }
+        pattern: { type: [string, "null"], description: Case-insensitive PostgreSQL regular expression over the statement }
+        action: { type: string, enum: [warn, block], default: warn }
+        reason: { type: string }
+        hint: { type: [string, "null"] }
+        enabled: { type: boolean }
+        builtin: { type: boolean, readOnly: true }
+        updated_at: { type: string, format: date-time, readOnly: true }
+        updated_by: { type: [string, "null"], readOnly: true }
+    PolicyDetail:
+      type: object
+      description: The DETAIL JSON of a VDB01/VDB02 policy error or warning (docs/policy-errors.md, contract v1).
+      properties:
+        v: { type: integer }
+        rule_id: { type: string }
+        action: { type: string, enum: [warn, block] }
+        command: { type: string }
+        matched: { type: [string, "null"] }
+        reason: { type: string }
+        hint: { type: string }
+        override: { type: [string, "null"] }
+        evaluation_id: { type: [integer, "null"] }
+        blackbox_id: { type: [integer, "null"] }
+        impact: { type: [object, "null"] }
     Branch:
       type: object
       properties:

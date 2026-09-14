@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: AGPL-3.0-or-later
 --
--- VectoraDB Schema Ledger (RECORD layer) — a record the database keeps about
+-- VectoraDB Blackbox (RECORD layer) — a record the database keeps about
 -- itself. Event triggers capture every DDL change, attribute it (human vs
 -- agent, tool, session, branch), and enforce guardrails on destructive DDL.
 --

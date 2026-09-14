@@ -75,7 +75,7 @@ class VectoraDB:
         """Run SQL on a branch. Returns {"columns": [...], "rows": [...]} or {"error": ...}."""
         return self._request("POST", f"/api/branches/{branch}/query", {"sql": sql})
 
-    # --- schema ledger ---
+    # --- Blackbox (the record of schema changes; ledger* names still work) ---
     def ledger(self, branch: str = "main", **filters):
         """The branch's DDL history. Filters: actor, table, risk, status, kind, limit, offset."""
         qs = urllib.parse.urlencode({k: v for k, v in filters.items() if v is not None})
@@ -83,5 +83,13 @@ class VectoraDB:
         return self._request("GET", path)
 
     def verify_ledger(self, branch: str = "main"):
-        """Recompute the ledger's hash chain; the result reports broken rows (0 = intact)."""
+        """Recompute the Blackbox hash chain; the result reports broken rows (0 = intact)."""
         return self._request("GET", f"/api/branches/{branch}/ledger/verify")
+
+    def blackbox(self, branch: str = "main", **filters):
+        """Blackbox: the branch's DDL history. Same as ledger()."""
+        return self.ledger(branch, **filters)
+
+    def verify_blackbox(self, branch: str = "main"):
+        """Recompute the Blackbox hash chain. Same as verify_ledger()."""
+        return self.verify_ledger(branch)

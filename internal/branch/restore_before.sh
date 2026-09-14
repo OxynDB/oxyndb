@@ -1,7 +1,7 @@
 #!/bin/bash
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Branch-before-entry restore (Schema Ledger 2.0). BranchBeforeEntry runs this
+# Branch-before-entry restore (Blackbox 2.0). BranchBeforeEntry runs this
 # inside the stock postgres-walg image with `bash -c`, so the published image
 # needs no new file. It fetches the named base backup into the new branch's
 # empty data directory, replays archived WAL, stops just BEFORE the target

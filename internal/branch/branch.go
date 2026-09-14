@@ -212,7 +212,7 @@ func Init() error {
 	// Reserve pool space for the primary so branches can't take it read-only
 	// (idempotent — also applies on an upgrade of an existing install).
 	store.protectPrimary()
-	// Install the schema ledger into main; every branch (a ZFS clone) inherits it.
+	// Install the Blackbox into main; every branch (a ZFS clone) inherits it.
 	if err := InstallLedger("main"); err != nil {
 		return err
 	}
@@ -286,13 +286,13 @@ func psqlStdin(name, sql string) error {
 	return cmd.Run()
 }
 
-// InstallLedger installs (or upgrades) the schema ledger into a branch. It is
+// InstallLedger installs (or upgrades) the Blackbox into a branch. It is
 // idempotent and safe to run repeatedly.
 func InstallLedger(name string) error {
 	return psqlStdin(name, ledger.Schema)
 }
 
-// Ledger prints a branch's schema ledger (most recent first) — the RECORD layer:
+// Ledger prints a branch's Blackbox (most recent first) — the RECORD layer:
 // every DDL change, attributed and policy-checked.
 func Ledger(name string, limit int) error {
 	if name == "" {
@@ -380,7 +380,7 @@ func QueryText(name, sql string) (string, error) {
 	return out, nil
 }
 
-// LedgerText returns a branch's recent schema-ledger entries as rendered text —
+// LedgerText returns a branch's recent Blackbox entries as rendered text —
 // the "show me what I changed" view for an agent.
 func LedgerText(name string, limit int) (string, error) {
 	if limit <= 0 {
@@ -684,7 +684,7 @@ func CreateAgentBranch(agentID string) (Info, error) {
 	if err != nil {
 		return Info{}, err
 	}
-	// Default this branch's attribution to the agent, so its schema ledger records
+	// Default this branch's attribution to the agent, so its Blackbox records
 	// direct connections as agent activity even without the Gateway in the path.
 	actor := "agent-" + strings.ReplaceAll(agentID, "'", "''")
 	_ = psqlStdin(name, fmt.Sprintf(

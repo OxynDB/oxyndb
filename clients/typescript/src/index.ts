@@ -72,8 +72,16 @@ export class VectoraDB {
     ).toString()
     return this.request("GET", `/api/branches/${branch}/ledger${qs ? `?${qs}` : ""}`)
   }
-  /** Recompute the ledger's hash chain (tamper-evidence). */
+  /** Recompute the Blackbox hash chain (tamper-evidence). */
   verifyLedger(branch = "main"): Promise<QueryResult> {
     return this.request("GET", `/api/branches/${branch}/ledger/verify`)
+  }
+  /** Blackbox: the branch's DDL history. Same as ledger(). */
+  blackbox(branch = "main", filters: Record<string, string | number> = {}): Promise<QueryResult> {
+    return this.ledger(branch, filters)
+  }
+  /** Recompute the Blackbox hash chain. Same as verifyLedger(). */
+  verifyBlackbox(branch = "main"): Promise<QueryResult> {
+    return this.verifyLedger(branch)
   }
 }

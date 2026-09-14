@@ -24,3 +24,5 @@ coverage.*
 web/node_modules/
 web/dist/
 /dist/
+__pycache__/
+*.pyc

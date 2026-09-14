@@ -15,6 +15,10 @@ Makefile        text eol=lf
 go.mod          text eol=lf
 go.sum          text eol=lf
 
+# SQL is embedded into the vdb binary and run by psql inside Linux containers;
+# keep it LF so every platform builds the same bytes.
+*.sql           text eol=lf
+
 # Workflow `run:` blocks execute on Linux runners; CRLF there breaks the shell.
 *.yml text eol=lf
 *.yaml text eol=lf

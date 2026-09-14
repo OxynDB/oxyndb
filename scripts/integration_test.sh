@@ -78,7 +78,7 @@ kill "$RP" 2>/dev/null
 $S branch delete rgn >/dev/null 2>&1
 $S ha disable >/dev/null 2>&1
 
-echo "### 8. schema ledger (RECORD layer)"
+echo "### 8. Blackbox (schema ledger, RECORD layer)"
 pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS ledg CASCADE" >/dev/null 2>&1
 # Clean slate: the ledger is append-only now, so clearing it for a deterministic
 # count requires deliberately disabling triggers (session_replication_role).

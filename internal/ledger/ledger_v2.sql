@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: AGPL-3.0-or-later
 --
--- VectoraDB Schema Ledger 2.0 — additive objects, installed AFTER ledger.sql.
+-- VectoraDB Blackbox 2.0 — additive objects, installed AFTER ledger.sql.
 --
 -- Nothing here changes an object ledger.sql owns: vdb.schema_ledger, its hash
 -- chain (_ledger_hash / chain_row) and its event triggers are untouched, so every
@@ -11,6 +11,8 @@
 --   * Fail-safe: a 2.0 trigger never aborts the statement that fired it. Errors
 --     are downgraded to a WARNING and the original change goes through.
 --   * Kill switch: ALTER DATABASE vectoradb SET vdb.v2 = 'off' makes every 2.0
+--     trigger skip its work (see vdb._capture_disabled: honoured database-wide
+--     or in a superuser's session, never from a client's own SET) —
 --     trigger return immediately (new sessions).
 --   * Idempotent: safe to re-apply on every start.
 --
@@ -47,22 +49,40 @@ LANGUAGE sql IMMUTABLE AS $$
     coalesce(e.override_used::text,''), 'UTF8')), 'hex');
 $$;
 
+-- The kill switch. vdb.v2 = 'off' is honoured only when it is set for the whole
+-- database (ALTER DATABASE … SET vdb.v2 = 'off', which needs the database owner
+-- or a superuser) or in a superuser's own session. Any other session setting it
+-- is ignored, so a client cannot hide the capture details of its own changes.
+CREATE OR REPLACE FUNCTION vdb._capture_disabled() RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog AS $$
+  SELECT coalesce(current_setting('vdb.v2', true), '') = 'off'
+     AND (EXISTS (SELECT 1
+                    FROM pg_db_role_setting s, unnest(s.setconfig) AS c(cfg)
+                   WHERE s.setdatabase = (SELECT oid FROM pg_database WHERE datname = current_database())
+                     AND s.setrole = 0
+                     AND c.cfg = 'vdb.v2=off')
+          OR coalesce((SELECT rolsuper FROM pg_roles WHERE rolname = session_user), false));
+$$;
+
 CREATE OR REPLACE FUNCTION vdb.capture_ext() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, vdb AS $$
 DECLARE e vdb.ledger_ext;
 BEGIN
-  IF coalesce(current_setting('vdb.v2', true), '') = 'off' THEN
-    RETURN NULL;
-  END IF;
   BEGIN
+    IF vdb._capture_disabled() THEN
+      RETURN NULL;
+    END IF;
     e.ledger_id      := NEW.id;
     e.xid            := txid_current();
     e.lsn            := pg_current_wal_insert_lsn();
     e.task_id        := nullif(current_setting('vdb.task', true), '');
     e.parent_session := nullif(current_setting('vdb.parent_session', true), '');
     e.call_hash      := nullif(current_setting('vdb.call_hash', true), '');
+    -- The guardrail override was set, or the policy gate let a blocking rule
+    -- through for an admin (vdb.policy_override_used, set by policy.sql).
     e.override_used  := coalesce(nullif(current_setting('vdb.allow_destructive', true), ''), 'off')
-                          IN ('on','true','1');
+                          IN ('on','true','1')
+                        OR coalesce(current_setting('vdb.policy_override_used', true), '') = 'on';
     e.captured_at    := clock_timestamp();
     e.ext_hash       := vdb._ext_hash(e);
     INSERT INTO vdb.ledger_ext SELECT (e).*;

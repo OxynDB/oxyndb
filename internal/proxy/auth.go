@@ -241,7 +241,7 @@ func nonce() (string, error) {
 }
 
 // ledgerOptions builds the Postgres startup `options` string that injects
-// attribution settings for the schema ledger (read in-DB via
+// attribution settings for the Blackbox (read in-DB via
 // current_setting('vectoradb.*')). It appends to any options the client sent.
 // The values here (email, branch name, alphanumeric session) contain no spaces,
 // so no escaping is required.
