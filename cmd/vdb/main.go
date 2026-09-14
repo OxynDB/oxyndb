@@ -70,6 +70,7 @@ Branching:
 Schema ledger (RECORD layer):
   ledger [branch] [--limit N]  Show captured DDL changes — attributed & policy-checked
   ledger verify [branch]       Verify the tamper-evident hash chain is intact
+  ledger upgrade [branch|--all] Apply the current ledger definition to existing branches
   ledger revert --to <ts>      Time-travel revert of a branch's schema+data to a moment
 
 Migration:
@@ -106,6 +107,9 @@ Auth (admin):
   apikey create <email> [name]   Mint an API key (shown once)
   apikey list <email>            List a user's API keys
   apikey revoke <email> <id>     Revoke an API key
+  admin grant <email> [--branch <name>]   Let a user override the destructive-DDL guardrail
+  admin revoke <email> [--branch <name>]  Remove that permission
+  admin list [--branch <name>]            Show who may override (default: main + running branches)
 
   version              Print the vdb version
 `
@@ -229,6 +233,8 @@ func main() {
 		must(userCreate(os.Args[3]))
 	case "apikey":
 		apikeyCmd(os.Args[2:])
+	case "admin":
+		adminCmd(os.Args[2:])
 	case "serve":
 		must(agentapi.Serve(addrFlag(os.Args[2:], ":8088")))
 	case "controlplane":
@@ -354,6 +360,10 @@ func ledgerCmd(args []string) {
 		}
 		fmt.Println("Reverting via time-travel restore (disposable container on :5433)…")
 		must(branch.Restore(ts))
+		return
+	}
+	if len(args) > 0 && args[0] == "upgrade" {
+		ledgerUpgradeCmd(args[1:])
 		return
 	}
 	if len(args) > 0 && args[0] == "verify" {
@@ -528,6 +538,11 @@ func bootstrapLocalKey() string {
 		return ""
 	}
 	writeCachedKey(key)
+	// The install's first user owns it, so it may override the destructive-DDL
+	// guardrail on main (and every branch cloned from it). Best-effort.
+	if err := branch.GrantAdmin("main", u.Email); err != nil {
+		fmt.Fprintln(os.Stderr, "note: could not grant vdb_admin to "+u.Email+":", err)
+	}
 	return key
 }
 

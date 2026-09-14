@@ -554,8 +554,10 @@ func Restore(ts string) error {
 	if err := run("docker", "run", "-d",
 		"--name", container(name), "--network", network,
 		"-e", "WALG_S3_PREFIX=s3://vectoradb-wal",
-		"-e", "AWS_ACCESS_KEY_ID=minioadmin",
-		"-e", "AWS_SECRET_ACCESS_KEY=minioadmin",
+		// The same per-install MinIO credentials the primary archives WAL with —
+		// the object store rejects anything else, so a hardcoded pair can't fetch.
+		"-e", "AWS_ACCESS_KEY_ID="+minioUser(),
+		"-e", "AWS_SECRET_ACCESS_KEY="+minioPass(),
 		"-e", "AWS_ENDPOINT=http://minio:9000",
 		"-e", "AWS_S3_FORCE_PATH_STYLE=true",
 		"-e", "AWS_REGION=us-east-1",
@@ -571,7 +573,7 @@ func Restore(ts string) error {
 		return err
 	}
 	fmt.Printf("restored to %q, ready as container %s (port 5433). Query it with:\n"+
-		"  sudo docker exec -e PGPASSWORD=vectoradb %s psql -U vectoradb -d vectoradb -c 'SELECT ...'\n",
+		"  sudo docker exec %s psql -U vectoradb -d vectoradb -c 'SELECT ...'\n",
 		ts, container(name), container(name))
 	return nil
 }
@@ -689,7 +691,20 @@ func CreateAgentBranch(agentID string) (Info, error) {
 	// The DSN reaches the branch over the docker network (VM-internal); a host
 	// agent should connect through the gateway. A gateway-routed, key-scoped DSN
 	// is the planned replacement.
-	return Info{Agent: agentID, Branch: name, Host: ip, Port: "5432", DSN: dsn(ip, "5432"), Status: "ready"}, nil
+	if AgentSuperuser() {
+		return Info{Agent: agentID, Branch: name, Host: ip, Port: "5432", DSN: dsn(ip, "5432"), Status: "ready"}, nil
+	}
+	// The agent logs in as its own non-superuser role, named like its ledger actor
+	// ("agent-<id>"): it is bound by the guardrail and the ledger's append-only
+	// protection, and its changes are attributed to an identity it cannot change.
+	password, err := randomPassword()
+	if err != nil {
+		return Info{}, err
+	}
+	if err := ensureLoginRole(name, name, password); err != nil {
+		return Info{}, fmt.Errorf("creating the agent's database role: %w", err)
+	}
+	return Info{Agent: agentID, Branch: name, Host: ip, Port: "5432", DSN: agentDSN(name, password, ip, "5432"), Status: "ready"}, nil
 }
 
 // DeleteAgentBranch tears down agent id's branch.
@@ -948,9 +963,15 @@ func ListAgentBranches() ([]Info, error) {
 	for _, n := range strings.Fields(out) {
 		bn := strings.TrimPrefix(n, "vec-")
 		ip, _ := containerIP(n)
+		// List the agent's own role and leave its password out — it is returned once,
+		// when the branch is created. The legacy switch keeps the old superuser DSN.
+		d := agentDSN(bn, "", ip, "5432")
+		if AgentSuperuser() {
+			d = dsn(ip, "5432")
+		}
 		infos = append(infos, Info{
 			Agent:  strings.TrimPrefix(bn, "agent-"),
-			Branch: bn, Host: ip, Port: "5432", DSN: dsn(ip, "5432"), Status: "ready",
+			Branch: bn, Host: ip, Port: "5432", DSN: d, Status: "ready",
 		})
 	}
 	return infos, nil
