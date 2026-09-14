@@ -103,7 +103,7 @@
   changes in the same commit.</p>
   <div class="meta">
     <b>Product:</b> VectoraDB — serverless PostgreSQL with copy-on-write branching and a Schema Ledger<br>
-    <b>Last updated:</b> 14 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>a5a52b6</code> + Schema Ledger 2.0 Phase 1 (<code>feat/ledger2-phase1-security</code>)<br>
+    <b>Last updated:</b> 14 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>33f49ef</code> + Schema Ledger 2.0 Phase 2 (<code>feat/ledger2-phase2-capture</code>)<br>
     <b>License:</b> AGPL-3.0 core · Apache-2.0 client SDKs<br>
     <b>Source of truth:</b> <code>docs/VDB_Feature_Implemented.html</code> → <code>make feature-doc</code> → this PDF<br>
     <b>Supersedes:</b> <code>docs/vectoradb-feature-reference</code> (25 Aug 2026, no longer maintained)<br>
@@ -117,7 +117,8 @@
   <p class="sub">Newest first. Every change to VectoraDB adds a row here.</p>
   <table>
     <tr><th style="width:17%">Date</th><th style="width:22%">Feature(s)</th><th>What changed</th><th style="width:14%">Commit / PR</th></tr>
-    <tr><td>14 Sep 2026</td><td>D3, H3, H4, K5, K6, B1; new H8</td><td><b>Schema Ledger 2.0 Phase 1 — three security fixes.</b> PITR restore uses the per-install MinIO credentials. The destructive-DDL override is honoured only for superusers and <code>vdb_admin</code> members (new <code>vdb admin grant|revoke|list</code> and <code>vdb ledger upgrade</code>; the first local user is granted automatically). Agent branches log in as their own non-superuser <code>agent-&lt;id&gt;</code> role and MCP <code>run_sql</code> runs as <code>vdbclient</code> (compatibility switches <code>VECTORADB_AGENT_SUPERUSER</code>, <code>VECTORADB_MCP_SUPERUSER</code>). New <code>scripts/integration_ledger_v2.sh</code> (<code>make integration-v2</code>) pins unchanged behaviour and tests the fixes.</td><td><code>feat/ledger2-phase1-security</code></td></tr>
+    <tr><td>14 Sep 2026</td><td>new H9; H4, H8; test script</td><td><b>Schema Ledger 2.0 Phase 2 — capture foundation.</b> New side table <code>vdb.ledger_ext</code> records the transaction id, WAL position, agent task / tool-call hash and override use for every ledger row, through a fail-safe trigger with a kill switch (<code>vdb.v2 = off</code>); installed at start and by <code>vdb ledger upgrade</code>. The base ledger and its hash chain are untouched. Phase 1 verified in the VM (existing suite 26/28, v2 29/29) and Phase 2 verified (v2 42/42, no regressions); two false failures in <code>integration_test.sh</code> fixed (test-only).</td><td><code>feat/ledger2-phase2-capture</code></td></tr>
+    <tr><td>14 Sep 2026</td><td>D3, H3, H4, K5, K6, B1; new H8</td><td><b>Schema Ledger 2.0 Phase 1 — three security fixes.</b> PITR restore uses the per-install MinIO credentials. The destructive-DDL override is honoured only for superusers and <code>vdb_admin</code> members (new <code>vdb admin grant|revoke|list</code> and <code>vdb ledger upgrade</code>; the first local user is granted automatically). Agent branches log in as their own non-superuser <code>agent-&lt;id&gt;</code> role and MCP <code>run_sql</code> runs as <code>vdbclient</code> (compatibility switches <code>VECTORADB_AGENT_SUPERUSER</code>, <code>VECTORADB_MCP_SUPERUSER</code>). New <code>scripts/integration_ledger_v2.sh</code> (<code>make integration-v2</code>) pins unchanged behaviour and tests the fixes.</td><td><code>201676c</code> (PR #23)</td></tr>
     <tr><td>14 Sep 2026</td><td>Whole document</td><td>Document created. Inventory of every feature implemented as of <code>8b1856f</code>: install &amp; setup, CLI, branching &amp; storage, durability, security, gateway, auth, Schema Ledger, import, pipelines, APIs/SDKs/MCP, web console, CI &amp; releases. Known issues and the test baseline recorded.</td><td>branch <code>docs/feature-implemented</code></td></tr>
   </table>
 
@@ -126,8 +127,8 @@
   <table>
     <tr><th style="width:26%">Suite</th><th style="width:20%">Result</th><th>Details</th></tr>
     <tr><td>Go unit tests (<code>go test ./...</code>, host)</td><td><span class="st ok">All pass</span></td><td>14 Sep 2026, go1.26.6 darwin/arm64, commit <code>8b1856f</code>. Packages with tests: cmd/vdb, auth, branch, controlplane, daemon, host, proxy. No test files: agentapi, ledger, mcp, secrets, tlsutil, version, web.</td></tr>
-    <tr><td>Integration (<code>make integration</code>, Lima VM)</td><td><span class="st part">Pending run</span></td><td>The https fix for §1 and §5 landed in <code>13734a7</code>. Result to be recorded here.</td></tr>
-    <tr><td>Schema Ledger 2.0 (<code>make integration-v2</code>, Lima VM)</td><td><span class="st part">Pending run</span></td><td>Behaviour-unchanged checks plus Phase 1 fixes. Result to be recorded here.</td></tr>
+    <tr><td>Integration (<code>make integration</code>, Lima VM)</td><td><span class="st part">27 / 28</span></td><td>14 Sep 2026. <b>Before Phase 1</b> (<code>a5a52b6</code>): 25 passed, 3 failed — bad-key count, PITR (the <code>minioadmin</code> bug), append-only check. <b>After Phase 1</b> (<code>33f49ef</code>): 26 passed, 2 failed — PITR fixed, no regressions. The remaining two were test flaws (psql prints the bad-key error twice; the append-only check discarded stderr); the protections were confirmed by hand and the checks fixed. <b>With Phase 2</b> (<code>feat/ledger2-phase2-capture</code>): 27 passed, 1 failed — the bad-key check again, because its first fix (<code>grep -q</code>) broke under the script's <code>set -o pipefail</code>; corrected to count matches and re-checked in the VM.</td></tr>
+    <tr><td>Schema Ledger 2.0 (<code>make integration-v2</code>, Lima VM)</td><td><span class="st ok">42 / 42</span></td><td>14 Sep 2026, <code>33f49ef</code>: §0 behaviour unchanged and §1a–§1c Phase 1 fixes all pass. With Phase 2: 42 / 42, including all 13 §2 capture checks.</td></tr>
     <tr><td>Windows (Pester, windows-ci.yml)</td><td><span class="st ok">In CI</span></td><td>Runs on every push/PR to main.</td></tr>
   </table>
   <div class="foot">VDB_Feature Implemented · change log &amp; baseline</div>
@@ -197,6 +198,7 @@
       <li><span class="n">H6</span>Ledger access (CLI/REST/MCP/UI/SDK)<span class="st ok">Working</span></li>
       <li><span class="n">H7</span><code>vdb ledger revert --to</code><span class="st bad">Known issue</span></li>
       <li><span class="n">H8</span>Override permission &amp; ledger upgrade<span class="st ok">Working</span></li>
+      <li><span class="n">H9</span>Ledger 2.0 capture (xid, LSN, provenance)<span class="st ok">Working</span></li>
     </ul></div>
     <div class="g"><div class="gt">I · Import &amp; migration</div><ul>
       <li><span class="n">I1</span>From Postgres<span class="st ok">Working</span></li>
@@ -663,7 +665,7 @@
     <div class="row"><div class="k">How it works</div><div class="v"><code>ddl_command_start</code> → <code>guard_ddl_start</code> looks up <code>vdb.policy</code> (seeded DROP TABLE/SCHEMA → block), honours <code>vdb.allow_destructive</code> only when <code>vdb._may_override()</code> is true (H8), and raises <code>insufficient_privilege</code> with a HINT; a <code>dblink</code> insert records status <code>BLOCKED</code> in its own transaction so it survives the rollback. Imports/pipelines disable the trigger temporarily (I9).</div></div>
     <div class="row"><div class="k">How to use</div><div class="v">Automatic: <code>DROP TABLE t;</code> → "VectoraDB guardrail: DROP TABLE is blocked by policy".</div></div>
     <div class="row"><div class="k">How to test</div><div class="v">Integration §8 (DROP blocked; BLOCKED row recorded).</div></div>
-    <div class="row"><div class="k">Status &amp; limits</div><div class="v">Since Phase 1 the override is honoured only for superusers and members of <code>vdb_admin</code> (H8); anyone else stays blocked. Using the override isn't recorded yet (planned: Phase 2). Only <code>block</code> actions work (<code>flag</code>/<code>allow</code> do nothing); no CLI/API/UI to manage policy.</div></div>
+    <div class="row"><div class="k">Status &amp; limits</div><div class="v">Since Phase 1 the override is honoured only for superusers and members of <code>vdb_admin</code> (H8); anyone else stays blocked. Each use of the override is recorded in <code>vdb.ledger_ext.override_used</code> (H9). Only <code>block</code> actions work (<code>flag</code>/<code>allow</code> do nothing); no CLI/API/UI to manage policy.</div></div>
     <div class="row"><div class="k">Added in</div><div class="v"><code>e42e792</code>.</div></div>
   </div>
 
@@ -698,8 +700,16 @@
     <div class="row"><div class="k">How it works</div><div class="v"><code>ledger.sql</code> creates role <code>vdb_admin</code> and <code>vdb._may_override()</code> — true for superusers or members of <code>vdb_admin</code>, checked on <code>session_user</code> (the login identity a client can't change). <code>vdb admin grant</code> ensures the user's per-user role and runs <code>GRANT vdb_admin</code> (<code>internal/branch/security.go</code>, <code>cmd/vdb/admin.go</code>). Roles live in each branch's Postgres, so without <code>--branch</code> a change applies to main and every running branch; new branches inherit main's. The first local user created by <code>vdb start</code> is granted automatically. <code>vdb ledger upgrade</code> re-runs the idempotent <code>ledger.sql</code>; main is also upgraded on every <code>vdb start</code>.</div></div>
     <div class="row"><div class="k">How to use</div><div class="v"><code>vdb admin grant you@x.com</code> · <code>vdb admin list</code> · <code>vdb admin revoke you@x.com --branch qa</code> · <code>vdb ledger upgrade --all</code></div></div>
     <div class="row"><div class="k">How to test</div><div class="v">integration-v2 §1b: non-admin override refused with a HINT, admin override works, revoke restores the block, superuser override (imports/pipelines) unaffected.</div></div>
-    <div class="row"><div class="k">Status &amp; limits</div><div class="v">Code complete and unit-tested; VM integration run pending. <b>Existing installs:</b> the owner runs <code>vdb admin grant &lt;email&gt;</code> once (only brand-new installs grant the first user automatically), and existing branches need <code>vdb ledger upgrade --all</code>. Suspended branches are skipped until running.</div></div>
+    <div class="row"><div class="k">Status &amp; limits</div><div class="v">Verified in the VM (integration-v2 §1b, 14 Sep 2026). <b>Existing installs:</b> the owner runs <code>vdb admin grant &lt;email&gt;</code> once (only brand-new installs grant the first user automatically), and existing branches need <code>vdb ledger upgrade --all</code>. Suspended branches are skipped until running.</div></div>
     <div class="row"><div class="k">Added in</div><div class="v">Schema Ledger 2.0 Phase 1 (<code>feat/ledger2-phase1-security</code>).</div></div>
+  </div>
+  <div class="card"><div class="hd"><span class="id">H9</span><h3>Ledger 2.0 capture (transaction, WAL position, provenance)</h3><span class="st ok">Working</span></div>
+    <div class="row"><div class="k">What it does</div><div class="v">Records extra context for every ledger row: the transaction id and WAL position of the change, the agent task and tool-call hash when the session sets them, and whether the destructive-DDL override was in effect. It is the foundation for branching from just before a change (Phase 4) and agent provenance (Phase 6).</div></div>
+    <div class="row"><div class="k">How it works</div><div class="v">New file <code>internal/ledger/ledger_v2.sql</code>, which never alters an object <code>ledger.sql</code> owns. Side table <code>vdb.ledger_ext</code>, keyed by ledger row id, is filled by an <code>AFTER INSERT</code> trigger <code>vdb_ext_capture</code> that reads <code>txid_current()</code>, <code>pg_current_wal_insert_lsn()</code> and the settings <code>vdb.task</code>, <code>vdb.parent_session</code>, <code>vdb.call_hash</code> and <code>vdb.allow_destructive</code>. Each row carries <code>ext_hash</code> (<code>vdb._ext_hash</code>). Append-only like the ledger; clients may read, not write. <b>Fail-safe:</b> any capture error becomes a WARNING and the user's change still goes through. <b>Kill switch:</b> <code>ALTER DATABASE vectoradb SET vdb.v2 = 'off'</code>. Installed on main at every <code>vdb start</code> (best effort — never stops start-up) and by <code>vdb ledger upgrade</code>.</div></div>
+    <div class="row"><div class="k">How to use</div><div class="v">Automatic. Tag a session: <code>PGOPTIONS='-c vdb.task=task-42' psql …</code>. Inspect: <code>SELECT * FROM vdb.ledger_ext ORDER BY ledger_id DESC LIMIT 5;</code> Installed version: <code>SELECT vdb.ledger_v2_version();</code></div></div>
+    <div class="row"><div class="k">How to test</div><div class="v">integration-v2 §2: one capture row per ledger row; xid and LSN present; task and call hash captured; hash verifies; override use recorded; a failing capture doesn't block DDL; kill switch; append-only; clients can't write; base chain still verifies.</div></div>
+    <div class="row"><div class="k">Status &amp; limits</div><div class="v">Verified in the VM (integration-v2 §2, 14 Sep 2026). Ledger rows written before 2.0 was installed have no capture row. Blocked attempts are inserted through a separate dblink session, so their capture carries that session's transaction and no task. Existing branches need <code>vdb ledger upgrade --all</code>. Capture rows aren't yet anchored externally (Phase 3 checkpoints).</div></div>
+    <div class="row"><div class="k">Added in</div><div class="v">Schema Ledger 2.0 Phase 2 (<code>feat/ledger2-phase2-capture</code>).</div></div>
   </div>
   <div class="foot">VDB_Feature Implemented · H. Schema Ledger</div>
 </section>
@@ -1108,6 +1118,7 @@
     <tr><td>§1a Restore credentials</td><td>restore returns 3 rows; no hardcoded password printed; no <code>minioadmin</code> in the restore container</td><td>D3</td></tr>
     <tr><td>§1b Override permission</td><td>ledger upgrade; non-admin refused with HINT; admin allowed; revoke restores the block; superuser override still works</td><td>H4, H8, F4</td></tr>
     <tr><td>§1c Least privilege</td><td>agent DSN uses its own non-superuser role; DB usable; attributed to the agent; can't disable triggers or override; MCP list hides passwords; MCP run_sql as <code>vdbclient</code>; compat switch</td><td>K5, K6, H3</td></tr>
+    <tr><td>§2 Ledger 2.0 capture</td><td>installed at start; upgrade idempotent; capture row per ledger row with xid/LSN; task and call hash; hash verifies; override recorded; failing capture doesn't block DDL; kill switch; append-only; clients can't write; base chain intact</td><td>H9, H2</td></tr>
   </table>
   <p class="sub">Not covered by any automated test: most MCP tools, OAuth, REST import/pipeline handlers, SDKs, web UI, SCRAM, storage quotas, non-Mongo imports.</p>
   <div class="foot">VDB_Feature Implemented · test matrix</div>
@@ -1119,9 +1130,10 @@
   <p class="sub">Found while building this inventory. Recorded, not fixed — each fix changes existing behaviour and needs explicit approval. Struck-through items have been fixed.</p>
   <ol class="issues">
     <li><s>PITR restore broken on fresh installs (hardcoded <code>minioadmin</code>)</s> — <b>fixed</b> in Phase 1. (D3, H7)</li>
-    <li><s>Destructive-DDL override ungated</s> — <b>fixed</b> in Phase 1 (superusers and <code>vdb_admin</code> only). Use of the override is still not recorded (Phase 2). (H4, H8)</li>
+    <li><s>Destructive-DDL override ungated</s> — <b>fixed</b> in Phase 1 (superusers and <code>vdb_admin</code> only). Use of the override is now recorded (H9). (H4, H8)</li>
     <li><s>Agents and MCP run as superuser</s> — <b>fixed</b> in Phase 1 (own <code>agent-&lt;id&gt;</code> role; MCP as <code>vdbclient</code>). (K5, K6, H3)</li>
     <li><s>Integration §1 and §5 call http:// endpoints that now serve TLS</s> — <b>fixed</b> in <code>13734a7</code>.</li>
+    <li><s>Integration "bad key" and "append-only" checks gave false failures</s> — <b>fixed</b> (test-only; both protections confirmed working in the VM).</li>
     <li><code>vdb branch suspend main</code> stops the primary and the gateway won't wake it. (C3)</li>
     <li><code>vdb ha enable</code> after a failover deletes the live primary (<code>vec-standby</code>); post-failover <code>ha disable</code> routes main to a stopped container. (D4)</li>
     <li><code>backup</code>/<code>restore</code> always target <code>vec-main</code>, even after a failover; PITR always fetches the LATEST base backup. (D2, D3)</li>

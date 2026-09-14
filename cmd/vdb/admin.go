@@ -115,7 +115,12 @@ func ledgerUpgradeCmd(args []string) {
 			failed = true
 			continue
 		}
-		fmt.Printf("  %s: ledger up to date\n", b)
+		if err := branch.EnsureLedgerV2(b); err != nil {
+			fmt.Fprintf(os.Stderr, "  %s: %v\n", b, err)
+			failed = true
+			continue
+		}
+		fmt.Printf("  %s: ledger up to date (including 2.0 capture)\n", b)
 	}
 	if failed {
 		os.Exit(1)
