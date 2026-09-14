@@ -44,6 +44,12 @@ jobs:
           test -f dist/vdb-linux-arm64
           test -f dist/vdb-darwin-amd64
           test -f dist/vdb-darwin-arm64
+          # the independent ledger verifier (Schema Ledger 2.0)
+          test -f dist/vdb-verify-linux-amd64
+          test -f dist/vdb-verify-linux-arm64
+          test -f dist/vdb-verify-darwin-amd64
+          test -f dist/vdb-verify-darwin-arm64
+          test -f dist/vdb-verify-windows-amd64.exe
           test -f dist/vectoradb-docker-context.tar.gz
 
       # Created as a prerelease and left as a draft-free placeholder so

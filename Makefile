@@ -28,6 +28,8 @@ release: web-build   ## Cross-compile release binaries + the Windows image conte
 		echo "  building vdb-$$os-$$arch$$ext"; \
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch \
 			go build -trimpath $$tags -ldflags "$(LDFLAGS)" -o dist/vdb-$$os-$$arch$$ext ./cmd/vdb; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch \
+			go build -trimpath -ldflags "$(LDFLAGS)" -o dist/vdb-verify-$$os-$$arch$$ext ./cmd/vdb-verify; \
 	done
 	@echo "  building vectoradb-docker-context.tar.gz"
 	@tar -C docker/postgres -czf dist/vectoradb-docker-context.tar.gz .
@@ -50,7 +52,7 @@ integration:      ## Run the full end-to-end integration test in the Lima VM
 	lima bash -c 'cd "$(CURDIR)" && go build -o /tmp/vdb ./cmd/vdb' && lima bash "$(CURDIR)/scripts/integration_test.sh"
 
 integration-v2:   ## Run the Schema Ledger 2.0 checks (behaviour-unchanged + new) in the Lima VM
-	lima bash -c 'cd "$(CURDIR)" && go build -o /tmp/vdb ./cmd/vdb' && lima bash "$(CURDIR)/scripts/integration_ledger_v2.sh"
+	lima bash -c 'cd "$(CURDIR)" && go build -o /tmp/vdb ./cmd/vdb && go build -o /tmp/vdb-verify ./cmd/vdb-verify' && lima bash "$(CURDIR)/scripts/integration_ledger_v2.sh"
 
 web-dev:          ## DEPRECATED: the engine serves the UI at https://localhost:8080 (`vdb start`). Hot-reload dev server only.
 	@echo "note: 'make web-dev' is deprecated — 'vdb start' serves the UI at https://localhost:8080."

@@ -138,6 +138,9 @@ func toolList() []map[string]any {
 		tool("verify_ledger",
 			"Verify a branch's schema ledger has not been tampered with (recomputes the hash chain).",
 			map[string]any{"branch": str("branch name (default main)")}, nil),
+		tool("ledger_integrity",
+			"Check a branch's schema ledger against its checkpoint anchors, which are stored outside the database — catches edited, deleted or wiped history even if the hash chain was rewritten.",
+			map[string]any{"branch": str("branch name (default main)")}, nil),
 	}
 }
 
@@ -230,6 +233,17 @@ func runTool(name string, args json.RawMessage) (string, error) {
 		}
 		_ = json.Unmarshal(args, &a)
 		return branch.LedgerVerify(a.Branch)
+
+	case "ledger_integrity":
+		var a struct {
+			Branch string `json:"branch"`
+		}
+		_ = json.Unmarshal(args, &a)
+		rep, err := branch.Integrity(a.Branch)
+		if err != nil {
+			return "", err
+		}
+		return rep.Summary(), nil
 
 	default:
 		return "", fmt.Errorf("unknown tool: %s", name)

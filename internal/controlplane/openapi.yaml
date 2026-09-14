@@ -142,6 +142,79 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/QueryResult" } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /api/branches/{name}/ledger/integrity:
+    get:
+      tags: [ledger]
+      summary: Check the ledger against its checkpoint anchors, which are stored outside the database.
+      description: >
+        Detects edited, deleted or wiped history even when the in-database hash chain was
+        rewritten to hide it. Rows written after the last checkpoint are only hash-chain checked.
+      parameters: [{ $ref: "#/components/parameters/BranchName" }]
+      responses:
+        "200":
+          description: Integrity report.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  intact: { type: boolean }
+                  rows: { type: integer }
+                  chained_rows: { type: integer }
+                  legacy_rows: { type: integer }
+                  checkpoints: { type: integer }
+                  anchored_rows: { type: integer }
+                  unanchored_rows: { type: integer }
+                  first_broken_id: { type: integer }
+                  problems: { type: array, items: { type: string } }
+                  notes: { type: array, items: { type: string } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/branches/{name}/ledger/checkpoint:
+    post:
+      tags: [ledger]
+      summary: Anchor the ledger entries added since the last checkpoint.
+      parameters: [{ $ref: "#/components/parameters/BranchName" }]
+      responses:
+        "200":
+          description: Nothing new to checkpoint (checkpoint is null).
+        "201":
+          description: Checkpoint created; the anchor follows docs/ledger-anchor-format.md.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: created }
+                  anchor_path: { type: string }
+                  checkpoint:
+                    type: object
+                    properties:
+                      format: { type: string, example: vectoradb-ledger-anchor/1 }
+                      algorithm: { type: string, example: sha256-merkle-v1 }
+                      branch: { type: string }
+                      checkpoint_id: { type: integer }
+                      from_id: { type: integer }
+                      to_id: { type: integer }
+                      entry_count: { type: integer }
+                      last_row_hash: { type: string }
+                      merkle_root: { type: string }
+                      prev_root: { type: string }
+                      created_at: { type: string, format: date-time }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/branches/{name}/ledger/export:
+    get:
+      tags: [ledger]
+      summary: Every ledger entry with its capture columns, one JSON document per line.
+      description: The input vdb-verify checks offline with --export.
+      parameters: [{ $ref: "#/components/parameters/BranchName" }]
+      responses:
+        "200":
+          description: JSON lines.
+          content: { application/x-ndjson: { schema: { type: string } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /api/import:
     post:
       tags: [import]

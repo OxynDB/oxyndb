@@ -103,7 +103,7 @@
   changes in the same commit.</p>
   <div class="meta">
     <b>Product:</b> VectoraDB — serverless PostgreSQL with copy-on-write branching and a Schema Ledger<br>
-    <b>Last updated:</b> 14 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>33f49ef</code> + Schema Ledger 2.0 Phase 2 (<code>feat/ledger2-phase2-capture</code>)<br>
+    <b>Last updated:</b> 14 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>af96cf9</code> + Schema Ledger 2.0 Phase 3 (<code>feat/ledger2-phase3-checkpoints</code>)<br>
     <b>License:</b> AGPL-3.0 core · Apache-2.0 client SDKs<br>
     <b>Source of truth:</b> <code>docs/VDB_Feature_Implemented.html</code> → <code>make feature-doc</code> → this PDF<br>
     <b>Supersedes:</b> <code>docs/vectoradb-feature-reference</code> (25 Aug 2026, no longer maintained)<br>
@@ -117,7 +117,8 @@
   <p class="sub">Newest first. Every change to VectoraDB adds a row here.</p>
   <table>
     <tr><th style="width:17%">Date</th><th style="width:22%">Feature(s)</th><th>What changed</th><th style="width:14%">Commit / PR</th></tr>
-    <tr><td>14 Sep 2026</td><td>new H9; H4, H8; test script</td><td><b>Schema Ledger 2.0 Phase 2 — capture foundation.</b> New side table <code>vdb.ledger_ext</code> records the transaction id, WAL position, agent task / tool-call hash and override use for every ledger row, through a fail-safe trigger with a kill switch (<code>vdb.v2 = off</code>); installed at start and by <code>vdb ledger upgrade</code>. The base ledger and its hash chain are untouched. Phase 1 verified in the VM (existing suite 26/28, v2 29/29) and Phase 2 verified (v2 42/42, no regressions); two false failures in <code>integration_test.sh</code> fixed (test-only).</td><td><code>feat/ledger2-phase2-capture</code></td></tr>
+    <tr><td>14 Sep 2026</td><td>new H10, H11, H12, L8; H2, H9, B1, K1, K2, K6, M1, M4</td><td><b>Schema Ledger 2.0 Phase 3 — tamper-evidence outside the database.</b> Checkpoints record a Merkle root over new ledger entries in <code>vdb.ledger_checkpoints</code> and as read-only anchor files outside the database (format published in <code>docs/ledger-anchor-format.md</code>), on a schedule and on demand. <code>vdb ledger integrity</code> checks the ledger against the anchors and catches history rewritten even with a recomputed hash chain; the new open-source <code>vdb-verify</code> does the same independently, live or from an export. New: <code>vdb ledger checkpoint|integrity|export</code>, REST <code>…/ledger/integrity|checkpoint|export</code>, MCP <code>ledger_integrity</code>, web Integrity page, <code>vdb-verify</code> release binaries. Verified in the VM: integration-v2 63 / 63 and the existing suite 28 / 28 (no regressions).</td><td><code>feat/ledger2-phase3-checkpoints</code></td></tr>
+    <tr><td>14 Sep 2026</td><td>new H9; H4, H8; test script</td><td><b>Schema Ledger 2.0 Phase 2 — capture foundation.</b> New side table <code>vdb.ledger_ext</code> records the transaction id, WAL position, agent task / tool-call hash and override use for every ledger row, through a fail-safe trigger with a kill switch (<code>vdb.v2 = off</code>); installed at start and by <code>vdb ledger upgrade</code>. The base ledger and its hash chain are untouched. Phase 1 verified in the VM (existing suite 26/28, v2 29/29) and Phase 2 verified (v2 42/42, no regressions); two false failures in <code>integration_test.sh</code> fixed (test-only).</td><td><code>56bfb81</code> (PR #24)</td></tr>
     <tr><td>14 Sep 2026</td><td>D3, H3, H4, K5, K6, B1; new H8</td><td><b>Schema Ledger 2.0 Phase 1 — three security fixes.</b> PITR restore uses the per-install MinIO credentials. The destructive-DDL override is honoured only for superusers and <code>vdb_admin</code> members (new <code>vdb admin grant|revoke|list</code> and <code>vdb ledger upgrade</code>; the first local user is granted automatically). Agent branches log in as their own non-superuser <code>agent-&lt;id&gt;</code> role and MCP <code>run_sql</code> runs as <code>vdbclient</code> (compatibility switches <code>VECTORADB_AGENT_SUPERUSER</code>, <code>VECTORADB_MCP_SUPERUSER</code>). New <code>scripts/integration_ledger_v2.sh</code> (<code>make integration-v2</code>) pins unchanged behaviour and tests the fixes.</td><td><code>201676c</code> (PR #23)</td></tr>
     <tr><td>14 Sep 2026</td><td>Whole document</td><td>Document created. Inventory of every feature implemented as of <code>8b1856f</code>: install &amp; setup, CLI, branching &amp; storage, durability, security, gateway, auth, Schema Ledger, import, pipelines, APIs/SDKs/MCP, web console, CI &amp; releases. Known issues and the test baseline recorded.</td><td>branch <code>docs/feature-implemented</code></td></tr>
   </table>
@@ -127,8 +128,8 @@
   <table>
     <tr><th style="width:26%">Suite</th><th style="width:20%">Result</th><th>Details</th></tr>
     <tr><td>Go unit tests (<code>go test ./...</code>, host)</td><td><span class="st ok">All pass</span></td><td>14 Sep 2026, go1.26.6 darwin/arm64, commit <code>8b1856f</code>. Packages with tests: cmd/vdb, auth, branch, controlplane, daemon, host, proxy. No test files: agentapi, ledger, mcp, secrets, tlsutil, version, web.</td></tr>
-    <tr><td>Integration (<code>make integration</code>, Lima VM)</td><td><span class="st part">27 / 28</span></td><td>14 Sep 2026. <b>Before Phase 1</b> (<code>a5a52b6</code>): 25 passed, 3 failed — bad-key count, PITR (the <code>minioadmin</code> bug), append-only check. <b>After Phase 1</b> (<code>33f49ef</code>): 26 passed, 2 failed — PITR fixed, no regressions. The remaining two were test flaws (psql prints the bad-key error twice; the append-only check discarded stderr); the protections were confirmed by hand and the checks fixed. <b>With Phase 2</b> (<code>feat/ledger2-phase2-capture</code>): 27 passed, 1 failed — the bad-key check again, because its first fix (<code>grep -q</code>) broke under the script's <code>set -o pipefail</code>; corrected to count matches and re-checked in the VM.</td></tr>
-    <tr><td>Schema Ledger 2.0 (<code>make integration-v2</code>, Lima VM)</td><td><span class="st ok">42 / 42</span></td><td>14 Sep 2026, <code>33f49ef</code>: §0 behaviour unchanged and §1a–§1c Phase 1 fixes all pass. With Phase 2: 42 / 42, including all 13 §2 capture checks.</td></tr>
+    <tr><td>Integration (<code>make integration</code>, Lima VM)</td><td><span class="st ok">28 / 28</span></td><td>14 Sep 2026. <b>Before Phase 1</b> (<code>a5a52b6</code>): 25 passed, 3 failed — bad-key count, PITR (the <code>minioadmin</code> bug), append-only check. <b>After Phase 1</b> (<code>33f49ef</code>): 26 passed, 2 failed — PITR fixed, no regressions. The remaining two were test flaws (psql prints the bad-key error twice; the append-only check discarded stderr); the protections were confirmed by hand and the checks fixed. <b>With Phase 2</b> (<code>feat/ledger2-phase2-capture</code>): 27 passed, 1 failed — the bad-key check again, because its first fix (<code>grep -q</code>) broke under the script's <code>set -o pipefail</code>; corrected to count matches and re-checked in the VM. <b>With Phase 3</b> (<code>feat/ledger2-phase3-checkpoints</code>): 28 / 28 — every check passes.</td></tr>
+    <tr><td>Schema Ledger 2.0 (<code>make integration-v2</code>, Lima VM)</td><td><span class="st ok">63 / 63</span></td><td>14 Sep 2026, <code>33f49ef</code>: §0 behaviour unchanged and §1a–§1c Phase 1 fixes all pass. With Phase 2: 42 / 42. <b>With Phase 3</b> (<code>feat/ledger2-phase3-checkpoints</code>): 63 / 63, including 20 new §3 checkpoint, verifier and tamper checks and the §3b scheduler check.</td></tr>
     <tr><td>Windows (Pester, windows-ci.yml)</td><td><span class="st ok">In CI</span></td><td>Runs on every push/PR to main.</td></tr>
   </table>
   <div class="foot">VDB_Feature Implemented · change log &amp; baseline</div>
@@ -199,6 +200,9 @@
       <li><span class="n">H7</span><code>vdb ledger revert --to</code><span class="st bad">Known issue</span></li>
       <li><span class="n">H8</span>Override permission &amp; ledger upgrade<span class="st ok">Working</span></li>
       <li><span class="n">H9</span>Ledger 2.0 capture (xid, LSN, provenance)<span class="st ok">Working</span></li>
+      <li><span class="n">H10</span>Checkpoints &amp; anchors<span class="st ok">Working</span></li>
+      <li><span class="n">H11</span>vdb-verify (independent verifier)<span class="st ok">Working</span></li>
+      <li><span class="n">H12</span>Ledger integrity &amp; export<span class="st ok">Working</span></li>
     </ul></div>
     <div class="g"><div class="gt">I · Import &amp; migration</div><ul>
       <li><span class="n">I1</span>From Postgres<span class="st ok">Working</span></li>
@@ -237,6 +241,7 @@
       <li><span class="n">L5</span>Ledger page<span class="st part">Partial</span></li>
       <li><span class="n">L6</span>API keys page<span class="st ok">Working</span></li>
       <li><span class="n">L7</span>Landing, Guide &amp; Docs pages<span class="st part">Partial</span></li>
+      <li><span class="n">L8</span>Ledger integrity page<span class="st part">Partial</span></li>
     </ul></div>
     <div class="g"><div class="gt">M · Build, CI &amp; releases</div><ul>
       <li><span class="n">M1</span>Makefile targets<span class="st ok">Working</span></li>
@@ -333,7 +338,7 @@
         <tr><td><code>vdb branch create|list|delete|reset [--from p]|suspend|resume</code></td><td>Branches (C2)</td></tr>
         <tr><td><code>vdb backup create|list</code> · <code>vdb restore --to &lt;ts|latest&gt;</code></td><td>Durability (D2, D3)</td></tr>
         <tr><td><code>vdb ha enable|status|failover|disable</code></td><td>HA (D4)</td></tr>
-        <tr><td><code>vdb ledger [branch] [--limit N]</code> · <code>ledger verify</code> · <code>ledger upgrade [branch|--all]</code> · <code>ledger revert --to</code></td><td>Schema Ledger (H6, H7, H8)</td></tr>
+        <tr><td><code>vdb ledger [branch] [--limit N]</code> · <code>ledger verify</code> · <code>ledger upgrade [branch|--all]</code> · <code>ledger checkpoint|integrity|export [branch]</code> · <code>ledger revert --to</code></td><td>Schema Ledger (H6–H8, H10, H12)</td></tr>
         <tr><td><code>vdb import --from &lt;src&gt; [--as n] [--continuous]</code> · <code>vdb import-cutover &lt;n&gt;</code></td><td>Import (I*)</td></tr>
         <tr><td><code>vdb pipeline run spec.json [--as n]</code></td><td>Pipelines (J1)</td></tr>
         <tr><td><code>vdb user create</code> · <code>vdb apikey create|list|revoke</code> · <code>vdb admin grant|revoke|list [--branch]</code></td><td>Accounts (G2, G3, H8)</td></tr>
@@ -647,7 +652,7 @@
     <div class="row"><div class="k">How it works</div><div class="v"><code>chain_row</code> BEFORE INSERT sets <code>row_hash = sha256(prev_hash|id|at(UTC)|…|risk)</code> under <code>pg_advisory_xact_lock</code>. <code>vdb_append_only</code> / <code>vdb_no_truncate</code> triggers + REVOKE block UPDATE/DELETE/TRUNCATE. <code>LedgerVerify</code> recomputes every hash and link.</div></div>
     <div class="row"><div class="k">How to use</div><div class="v"><code>vdb ledger verify [branch]</code>; <code>GET /api/branches/{name}/ledger/verify</code>; MCP <code>verify_ledger</code>; SDK <code>verify_ledger()</code>.</div></div>
     <div class="row"><div class="k">How to test</div><div class="v">Integration §8 (plain DELETE blocked; 0 broken rows). Manual: <code>vdb ledger verify</code> → "ledger intact — N rows…".</div></div>
-    <div class="row"><div class="k">Status &amp; limits</div><div class="v">A superuser can bypass the triggers (<code>session_replication_role=replica</code>). Verify can't detect deletion of the newest rows or a wiped table (no external anchor). <code>vdb.policy</code> is not covered. No verify button in the web UI. (Schema Ledger 2.0 Phase 3 adds anchored checkpoints.)</div></div>
+    <div class="row"><div class="k">Status &amp; limits</div><div class="v">A superuser can bypass the triggers (<code>session_replication_role=replica</code>) and rewrite the whole chain so this check still passes. Since Phase 3, <code>vdb ledger integrity</code> and <code>vdb-verify</code> (H10–H12) catch that by checking against anchors kept outside the database. <code>vdb.policy</code> is not covered.</div></div>
     <div class="row"><div class="k">Added in</div><div class="v"><code>db9dc0c</code>, <code>d14d9a1</code> (PR #13).</div></div>
   </div>
 
@@ -708,8 +713,32 @@
     <div class="row"><div class="k">How it works</div><div class="v">New file <code>internal/ledger/ledger_v2.sql</code>, which never alters an object <code>ledger.sql</code> owns. Side table <code>vdb.ledger_ext</code>, keyed by ledger row id, is filled by an <code>AFTER INSERT</code> trigger <code>vdb_ext_capture</code> that reads <code>txid_current()</code>, <code>pg_current_wal_insert_lsn()</code> and the settings <code>vdb.task</code>, <code>vdb.parent_session</code>, <code>vdb.call_hash</code> and <code>vdb.allow_destructive</code>. Each row carries <code>ext_hash</code> (<code>vdb._ext_hash</code>). Append-only like the ledger; clients may read, not write. <b>Fail-safe:</b> any capture error becomes a WARNING and the user's change still goes through. <b>Kill switch:</b> <code>ALTER DATABASE vectoradb SET vdb.v2 = 'off'</code>. Installed on main at every <code>vdb start</code> (best effort — never stops start-up) and by <code>vdb ledger upgrade</code>.</div></div>
     <div class="row"><div class="k">How to use</div><div class="v">Automatic. Tag a session: <code>PGOPTIONS='-c vdb.task=task-42' psql …</code>. Inspect: <code>SELECT * FROM vdb.ledger_ext ORDER BY ledger_id DESC LIMIT 5;</code> Installed version: <code>SELECT vdb.ledger_v2_version();</code></div></div>
     <div class="row"><div class="k">How to test</div><div class="v">integration-v2 §2: one capture row per ledger row; xid and LSN present; task and call hash captured; hash verifies; override use recorded; a failing capture doesn't block DDL; kill switch; append-only; clients can't write; base chain still verifies.</div></div>
-    <div class="row"><div class="k">Status &amp; limits</div><div class="v">Verified in the VM (integration-v2 §2, 14 Sep 2026). Ledger rows written before 2.0 was installed have no capture row. Blocked attempts are inserted through a separate dblink session, so their capture carries that session's transaction and no task. Existing branches need <code>vdb ledger upgrade --all</code>. Capture rows aren't yet anchored externally (Phase 3 checkpoints).</div></div>
+    <div class="row"><div class="k">Status &amp; limits</div><div class="v">Verified in the VM (integration-v2 §2, 14 Sep 2026). Ledger rows written before 2.0 was installed have no capture row. Blocked attempts are inserted through a separate dblink session, so their capture carries that session's transaction and no task. Existing branches need <code>vdb ledger upgrade --all</code>. Capture hashes are covered by checkpoint anchors (H10).</div></div>
     <div class="row"><div class="k">Added in</div><div class="v">Schema Ledger 2.0 Phase 2 (<code>feat/ledger2-phase2-capture</code>).</div></div>
+  </div>
+  <div class="card"><div class="hd"><span class="id">H10</span><h3>Checkpoints &amp; anchors</h3><span class="st ok">Working</span></div>
+    <div class="row"><div class="k">What it does</div><div class="v">Takes tamper-evidence outside the database. At intervals it records a Merkle root over the newest ledger entries — in the database and as a read-only anchor file somewhere else — so rewritten, deleted or wiped history can be proven later.</div></div>
+    <div class="row"><div class="k">How it works</div><div class="v"><code>vdb.ledger_checkpoints</code> (<code>ledger_v2.sql</code>) is append-only, and a trigger refuses any checkpoint that doesn't continue the last one (<code>from_id</code> = last <code>to_id</code> + 1, <code>prev_root</code> = last root). The engine (<code>internal/branch/checkpoint.go</code>) reads the new entries, refuses if their hash chain is already broken, and builds the anchor with <code>internal/ledger/integrity.go</code>: each leaf is sha256(0x00 ‖ recomputed row hash ‖ "|" ‖ capture hash), each node sha256(0x01 ‖ left ‖ right). It records the checkpoint, then writes <code>~/.vectoradb/anchors/&lt;branch&gt;/&lt;to_id&gt;.json</code> with mode 0444, never overwriting. A scheduler in the control plane checkpoints running branches every <code>VECTORADB_CHECKPOINT_INTERVAL</code> (10m) or once <code>VECTORADB_CHECKPOINT_ENTRIES</code> (500) are waiting; <code>VECTORADB_CHECKPOINTS=off</code> disables it. <code>VECTORADB_ANCHOR_DIR</code> moves anchors (e.g. to a write-once mount); <code>VECTORADB_ANCHOR_IMMUTABLE=1</code> adds <code>chattr +i</code>. The format is published in <code>docs/ledger-anchor-format.md</code>.</div></div>
+    <div class="row"><div class="k">How to use</div><div class="v"><code>vdb ledger checkpoint [branch]</code> · <code>POST /api/branches/{name}/ledger/checkpoint</code> · web Integrity page → Create checkpoint</div></div>
+    <div class="row"><div class="k">How to test</div><div class="v">Unit: <code>internal/ledger/integrity_test.go</code>. integration-v2 §3: anchor written read-only in the published format; no-op when nothing is new; the database refuses an out-of-sequence checkpoint; checkpoints are append-only. §3b: the scheduler anchors new entries on its own.</div></div>
+    <div class="row"><div class="k">Status &amp; limits</div><div class="v">Verified in the VM (integration-v2 §3 and §3b, 14 Sep 2026). Anchors are only as trustworthy as where they're stored — the default directory is on the same host, so point <code>VECTORADB_ANCHOR_DIR</code> at storage the database's operators can't rewrite. Entries written since the last checkpoint are protected by the hash chain only. Cloud write-once anchor writers (S3 Object Lock etc.) are not built (commercial scope). A cloned branch inherits its parent's checkpoint rows but not its anchor files.</div></div>
+    <div class="row"><div class="k">Added in</div><div class="v">Schema Ledger 2.0 Phase 3 (<code>feat/ledger2-phase3-checkpoints</code>).</div></div>
+  </div>
+  <div class="card"><div class="hd"><span class="id">H11</span><h3>vdb-verify — independent verifier</h3><span class="st ok">Working</span></div>
+    <div class="row"><div class="k">What it does</div><div class="v">A separate open-source program anyone can run to check a ledger without trusting VectoraDB, its engine or the database.</div></div>
+    <div class="row"><div class="k">How it works</div><div class="v"><code>cmd/vdb-verify</code> reads every ledger entry over a plain Postgres connection (read access through the gateway with an API key is enough) or from a <code>vdb ledger export</code> file, recomputes every row hash and Merkle root with the standard-library code in <code>internal/ledger/integrity.go</code>, and compares them with the anchor files. Exit 0 = intact, 1 = tampered, 2 = usage or connection error; <code>--json</code> prints the full report. Built and released as <code>vdb-verify-&lt;os&gt;-&lt;arch&gt;</code> next to <code>vdb</code>.</div></div>
+    <div class="row"><div class="k">How to use</div><div class="v"><code>vdb-verify --dsn 'postgresql://vectoradb:&lt;api-key&gt;@localhost:6432/main?sslmode=require' --anchors ~/.vectoradb/anchors/main</code> · offline: <code>vdb ledger export main &gt; main.jsonl</code> then <code>vdb-verify --export main.jsonl --anchors ./anchors/main</code></div></div>
+    <div class="row"><div class="k">How to test</div><div class="v">Unit tests (shared verification code). integration-v2 §3: agrees with integrity on a live branch and on an export; exits 1 on a forged edit.</div></div>
+    <div class="row"><div class="k">Status &amp; limits</div><div class="v">Verified in the VM (integration-v2 §3 and §3b, 14 Sep 2026). Needs a copy of the branch's anchor files. Reads the whole ledger into memory.</div></div>
+    <div class="row"><div class="k">Added in</div><div class="v">Schema Ledger 2.0 Phase 3 (<code>feat/ledger2-phase3-checkpoints</code>).</div></div>
+  </div>
+  <div class="card"><div class="hd"><span class="id">H12</span><h3>Ledger integrity &amp; export</h3><span class="st ok">Working</span></div>
+    <div class="row"><div class="k">What it does</div><div class="v">Answers "has this branch's schema history been tampered with?" and exports the full ledger for audits.</div></div>
+    <div class="row"><div class="k">How it works</div><div class="v"><code>Integrity</code> (<code>internal/branch/checkpoint.go</code>) loads every entry and the branch's anchor files and runs the same checks as <code>vdb-verify</code>: the hash chain, the anchor sequence, and each anchor's entry count, Merkle root and last entry. It notes when the database's own checkpoint list disagrees with the anchors (the anchors win). Unlike <code>vdb ledger verify</code>, which only checks the chain inside the database, it catches a rewritten chain. Export writes every entry with its capture columns as JSON lines.</div></div>
+    <div class="row"><div class="k">How to use</div><div class="v"><code>vdb ledger integrity [branch]</code> (exit 1 when tampered) · <code>vdb ledger export [branch] &gt; ledger.jsonl</code> · REST <code>GET …/ledger/integrity</code>, <code>GET …/ledger/export</code> · MCP <code>ledger_integrity</code> · web Integrity page</div></div>
+    <div class="row"><div class="k">How to test</div><div class="v">integration-v2 §3: an untampered branch is INTACT via CLI, REST, MCP and <code>vdb-verify</code>; a forged edit with a rewritten chain fools the in-database check but is TAMPERED here; so are a deleted newest anchored entry and a wiped ledger; deleting the database's checkpoint rows leaves it INTACT because the anchors are the source of truth.</div></div>
+    <div class="row"><div class="k">Status &amp; limits</div><div class="v">Verified in the VM (integration-v2 §3 and §3b, 14 Sep 2026). Reads the whole ledger on each check (fine at typical sizes; very large ledgers would need streaming).</div></div>
+    <div class="row"><div class="k">Added in</div><div class="v">Schema Ledger 2.0 Phase 3 (<code>feat/ledger2-phase3-checkpoints</code>).</div></div>
   </div>
   <div class="foot">VDB_Feature Implemented · H. Schema Ledger</div>
 </section>
@@ -895,6 +924,7 @@
         <tr><td><code>GET|POST /api/branches</code>, <code>DELETE /api/branches/{n}</code>, <code>POST …/suspend|resume</code></td><td>Branches</td></tr>
         <tr><td><code>POST /api/branches/{n}/query</code></td><td>SQL as <code>vdbclient</code>, 10s, ≤1000 rows, attributed to the user</td></tr>
         <tr><td><code>GET /api/branches/{n}/ledger</code>, <code>…/ledger/verify</code></td><td>Schema Ledger</td></tr>
+        <tr><td><code>GET …/ledger/integrity</code>, <code>POST …/ledger/checkpoint</code>, <code>GET …/ledger/export</code></td><td>Ledger integrity (H10, H12)</td></tr>
         <tr><td><code>POST /api/import</code>, <code>/api/import/file</code></td><td>Import (SSE)</td></tr>
         <tr><td><code>/api/pipelines…</code></td><td>Pipelines</td></tr>
         <tr><td><code>GET|POST /api/keys</code>, <code>DELETE /api/keys/{id}</code></td><td>API keys</td></tr>
@@ -910,7 +940,7 @@
     <div class="row"><div class="k">How it works</div><div class="v"><code>openapi.yaml</code> (OpenAPI 3.1) embedded and served at <code>/api/openapi.yaml</code>; also documents agent routes.</div></div>
     <div class="row"><div class="k">How to use</div><div class="v"><code>curl -k https://localhost:8080/api/openapi.yaml</code></div></div>
     <div class="row"><div class="k">How to test</div><div class="v">Manual fetch.</div></div>
-    <div class="row"><div class="k">Status &amp; limits</div><div class="v">Out of date: <code>/api/import</code> documented as <code>{from, as}</code> (code reads <code>{source, target, continuous}</code>); create endpoints documented as 200 (code 201); ledger <code>since/until</code>, <code>/auth/*</code> and upload fields missing.</div></div>
+    <div class="row"><div class="k">Status &amp; limits</div><div class="v">Out of date: <code>/api/import</code> documented as <code>{from, as}</code> (code reads <code>{source, target, continuous}</code>); create endpoints documented as 200 (code 201); ledger <code>since/until</code>, <code>/auth/*</code> and upload fields missing. The Ledger 2.0 integrity, checkpoint and export endpoints are documented.</div></div>
     <div class="row"><div class="k">Added in</div><div class="v"><code>52b1fc5</code> / <code>cc5cbd7</code> (PR #15).</div></div>
   </div>
 
@@ -943,7 +973,7 @@
 
   <div class="card"><div class="hd"><span class="id">K6</span><h3>MCP server</h3><span class="st part">Partial</span></div>
     <div class="row"><div class="k">What it does</div><div class="v">Lets agent frameworks manage agent branches, run SQL and read/verify the ledger via the Model Context Protocol.</div></div>
-    <div class="row"><div class="k">How it works</div><div class="v"><code>internal/mcp</code>: JSON-RPC 2.0 over stdio (<code>initialize</code>, <code>tools/list</code>, <code>tools/call</code>). Tools: <code>create_branch</code>, <code>list_branches</code>, <code>delete_branch</code>, <code>run_sql</code>, <code>changes</code>, <code>verify_ledger</code>.</div></div>
+    <div class="row"><div class="k">How it works</div><div class="v"><code>internal/mcp</code>: JSON-RPC 2.0 over stdio (<code>initialize</code>, <code>tools/list</code>, <code>tools/call</code>). Tools: <code>create_branch</code>, <code>list_branches</code>, <code>delete_branch</code>, <code>run_sql</code>, <code>changes</code>, <code>verify_ledger</code>, <code>ledger_integrity</code>.</div></div>
     <div class="row"><div class="k">How to use</div><div class="v">Configure an MCP client to launch command <code>vdb</code> with args <code>["mcp"]</code>.</div></div>
     <div class="row"><div class="k">How to test</div><div class="v">integration-v2 §1c (run_sql role, list_branches without passwords, compat switch). Manual: pipe <code>initialize</code>, <code>tools/list</code>, <code>tools/call run_sql</code> JSON lines into <code>vdb mcp</code>.</div></div>
     <div class="row"><div class="k">Status &amp; limits</div><div class="v"><code>run_sql</code> runs as the non-superuser <code>vdbclient</code>, attributed to <code>mcp</code>; <code>VECTORADB_MCP_SUPERUSER=1</code> restores the superuser. <code>list_branches</code> no longer shows passwords. No auth (local privileges). No client config snippet in docs.</div></div>
@@ -1018,6 +1048,14 @@
     <div class="row"><div class="k">Status &amp; limits</div><div class="v">Stale in places: Guide recommends <code>make web-dev</code>, omits <code>sslmode</code>, uses http for the agent API; Docs says <code>http://localhost:8080</code> and omits MCP, ledger, import and pipeline routes.</div></div>
     <div class="row"><div class="k">Added in</div><div class="v"><code>84741df</code>, <code>e9210fb</code>.</div></div>
   </div>
+  <div class="card"><div class="hd"><span class="id">L8</span><h3>Ledger integrity page</h3><span class="st part">Partial</span></div>
+    <div class="row"><div class="k">What it does</div><div class="v">Verify a branch against its anchors, create a checkpoint, and download the ledger export from the browser.</div></div>
+    <div class="row"><div class="k">How it works</div><div class="v"><code>web/src/pages/Integrity.tsx</code> (route <code>/integrity</code>, nav "Integrity") calls the integrity, checkpoint and export endpoints and shows INTACT / TAMPERED, entry and checkpoint counts, problems and notes.</div></div>
+    <div class="row"><div class="k">How to use</div><div class="v">https://localhost:8080/integrity</div></div>
+    <div class="row"><div class="k">How to test</div><div class="v">TypeScript type-check and production build pass. No automated UI test.</div></div>
+    <div class="row"><div class="k">Status &amp; limits</div><div class="v">Built but not yet exercised in a browser against a running stack.</div></div>
+    <div class="row"><div class="k">Added in</div><div class="v">Schema Ledger 2.0 Phase 3 (<code>feat/ledger2-phase3-checkpoints</code>).</div></div>
+  </div>
   <div class="foot">VDB_Feature Implemented · L. Web console</div>
 </section>
 
@@ -1027,7 +1065,7 @@
 
   <div class="card"><div class="hd"><span class="id">M1</span><h3>Makefile targets</h3><span class="st ok">Working</span></div>
     <div class="row"><div class="k">What it does</div><div class="v">One place to build, test and release.</div></div>
-    <div class="row"><div class="k">How it works</div><div class="v"><code>build</code>, <code>vet</code>, <code>fmt</code>, <code>test</code>, <code>vm-build</code> (Lima, embedui), <code>integration</code> and <code>integration-v2</code> (Lima), <code>web-build</code>, <code>web-dev</code> (deprecated), <code>release</code> (5 binaries + docker context), <code>release-linux</code>, <code>wsl-distro</code>, <code>wsl-zfs</code>, <code>feature-doc</code> (renders this PDF).</div></div>
+    <div class="row"><div class="k">How it works</div><div class="v"><code>build</code>, <code>vet</code>, <code>fmt</code>, <code>test</code>, <code>vm-build</code> (Lima, embedui), <code>integration</code> and <code>integration-v2</code> (Lima), <code>web-build</code>, <code>web-dev</code> (deprecated), <code>release</code> (5 <code>vdb</code> + 5 <code>vdb-verify</code> binaries + docker context), <code>release-linux</code>, <code>wsl-distro</code>, <code>wsl-zfs</code>, <code>feature-doc</code> (renders this PDF).</div></div>
     <div class="row"><div class="k">How to use</div><div class="v"><code>make test</code> · <code>make integration</code> · <code>make release VERSION=x.y.z</code> · <code>make feature-doc</code></div></div>
     <div class="row"><div class="k">How to test</div><div class="v">CI runs build/vet/test/gofmt.</div></div>
     <div class="row"><div class="k">Status &amp; limits</div><div class="v">Working. <code>release</code> prints an outdated ZFS-bundle note.</div></div>
@@ -1054,7 +1092,7 @@
 
   <div class="card"><div class="hd"><span class="id">M4</span><h3>Releases &amp; GHCR image</h3><span class="st ok">Working</span></div>
     <div class="row"><div class="k">What it does</div><div class="v">A <code>v*</code> tag publishes binaries, checksums and a multi-arch Postgres image.</div></div>
-    <div class="row"><div class="k">How it works</div><div class="v"><code>release.yml</code>: <code>make release</code>, verify assets, create (pre)release, <code>SHA256SUMS</code>, upload; image job builds <code>docker/postgres</code> for amd64+arm64 and pushes <code>ghcr.io/vectoradb/postgres-walg:16</code> and <code>:&lt;tag&gt;</code>.</div></div>
+    <div class="row"><div class="k">How it works</div><div class="v"><code>release.yml</code>: <code>make release</code>, verify assets (including <code>vdb-verify</code>), create (pre)release, <code>SHA256SUMS</code>, upload; image job builds <code>docker/postgres</code> for amd64+arm64 and pushes <code>ghcr.io/vectoradb/postgres-walg:16</code> and <code>:&lt;tag&gt;</code>.</div></div>
     <div class="row"><div class="k">How to use</div><div class="v">Push a tag <code>vX.Y.Z</code> (or run manually with a tag).</div></div>
     <div class="row"><div class="k">How to test</div><div class="v">Check the release page assets and <code>docker pull ghcr.io/vectoradb/postgres-walg:16</code>.</div></div>
     <div class="row"><div class="k">Status &amp; limits</div><div class="v">Working. GHCR package must be made public manually the first time.</div></div>
@@ -1091,6 +1129,7 @@
     <tr><td><code>internal/auth/auth_test.go</code></td><td>TestPasswordLogin, TestAPIKeys, TestVerifyKeyConcurrent, TestSessions</td><td>G1–G4</td></tr>
     <tr><td><code>internal/branch/branch_test.go</code></td><td>TestParsePublishedPort, TestDSN, TestAgentBranchName, TestContainerName</td><td>C2, C4, K5</td></tr>
     <tr><td><code>internal/branch/security_test.go</code></td><td>TestAgentDSN, TestTruthyEnv, TestSuperuserSwitchesDefaultOff, TestRandomPassword</td><td>K5, K6</td></tr>
+    <tr><td><code>internal/ledger/integrity_test.go</code>, <code>internal/ledger/ledger_v2_test.go</code></td><td>TestRowHashMatchesSQLFormula, TestFormatAt, TestMerkleRoot, TestVerifyIntactAndUnanchoredTail, TestVerifyDetectsTampering (6 cases), TestVerifyDetectsAnchorGap, TestCheckChain, TestBuildAnchorRejectsBadRanges, TestAnchorFiles, TestDecodeRowJSON, TestQueries, TestSchemaV2IsAdditive, TestSchemaV2Safety</td><td>H9–H12</td></tr>
     <tr><td><code>internal/branch/pipeline_test.go</code></td><td>TestSQLIdent, TestRenderSQL, TestTestQuery, TestJSONColumn</td><td>I6, I13, J1, J2</td></tr>
     <tr><td><code>internal/controlplane/server_test.go</code></td><td>TestNameValidation</td><td>K1</td></tr>
     <tr><td><code>internal/daemon/daemon_test.go</code></td><td>TestStopTerminatesProcess</td><td>B2</td></tr>
@@ -1119,6 +1158,8 @@
     <tr><td>§1b Override permission</td><td>ledger upgrade; non-admin refused with HINT; admin allowed; revoke restores the block; superuser override still works</td><td>H4, H8, F4</td></tr>
     <tr><td>§1c Least privilege</td><td>agent DSN uses its own non-superuser role; DB usable; attributed to the agent; can't disable triggers or override; MCP list hides passwords; MCP run_sql as <code>vdbclient</code>; compat switch</td><td>K5, K6, H3</td></tr>
     <tr><td>§2 Ledger 2.0 capture</td><td>installed at start; upgrade idempotent; capture row per ledger row with xid/LSN; task and call hash; hash verifies; override recorded; failing capture doesn't block DDL; kill switch; append-only; clients can't write; base chain intact</td><td>H9, H2</td></tr>
+    <tr><td>§3 Checkpoints &amp; verifier</td><td>anchor written read-only in the published format; no-op when nothing new; out-of-sequence checkpoint refused; append-only; untampered branch INTACT via CLI, REST, MCP, vdb-verify (live and export); forged edit with rewritten chain, deleted newest anchored entry and wiped ledger all TAMPERED; anchors outrank the database's checkpoint rows</td><td>H10–H12</td></tr>
+    <tr><td>§3b Scheduled checkpoints</td><td>with a 15s interval the control plane anchors new entries on its own</td><td>H10</td></tr>
   </table>
   <p class="sub">Not covered by any automated test: most MCP tools, OAuth, REST import/pipeline handlers, SDKs, web UI, SCRAM, storage quotas, non-Mongo imports.</p>
   <div class="foot">VDB_Feature Implemented · test matrix</div>
@@ -1137,7 +1178,7 @@
     <li><code>vdb branch suspend main</code> stops the primary and the gateway won't wake it. (C3)</li>
     <li><code>vdb ha enable</code> after a failover deletes the live primary (<code>vec-standby</code>); post-failover <code>ha disable</code> routes main to a stopped container. (D4)</li>
     <li><code>backup</code>/<code>restore</code> always target <code>vec-main</code>, even after a failover; PITR always fetches the LATEST base backup. (D2, D3)</li>
-    <li>Ledger verify can't detect deletion of the newest rows or a wiped table; a superuser can bypass the triggers. (H2)</li>
+    <li><s>Ledger verify can't detect deletion of the newest rows or a wiped table</s> — <b>addressed</b> in Phase 3: checkpoint anchors kept outside the database catch it (H10–H12). Entries written since the last checkpoint are still only chain-checked. (H2)</li>
     <li><code>vdb ledger revert --to</code> doesn't revert a branch. (H7)</li>
     <li>README documents <code>vdb branch diff</code> (doesn't exist) and ledger UI filters by table/risk (not in the UI). (L5)</li>
     <li>OpenAPI spec disagrees with the code (import fields, status codes, missing params/routes). (K2)</li>

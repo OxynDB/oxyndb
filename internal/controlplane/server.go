@@ -57,8 +57,12 @@ func Serve(addr string) error {
 	api := http.NewServeMux()
 	registerAPI(api)
 	registerPipelines(api, store) // /api/pipelines* (ETL)
+	registerLedgerV2(api)         // /api/branches/{name}/ledger/{integrity,checkpoint,export}
 	store.MountKeys(api)          // /api/keys (protected via Authn below)
 	mux.Handle("/api/", store.Authn(api))
+
+	// Schema Ledger 2.0: anchor new ledger entries outside the database on a schedule.
+	branch.StartCheckpointer()
 
 	handler := cors(store.WebOrigin())(logging(mux))
 
