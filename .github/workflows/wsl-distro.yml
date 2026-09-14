@@ -57,30 +57,30 @@ jobs:
       - name: Build the distro image
         run: make wsl-distro
 
-      # Appended, not replaced: release.yml publishes sums for the binaries.
-      # Every asset the installer or setup downloads must be listed, or
-      # verification silently skips it.
-      - name: Checksums
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag || github.ref_name }}
-        run: |
-          cd dist
-          gh release download "$TAG" -p SHA256SUMS -O existing.txt 2>/dev/null || : > existing.txt
-          sha256sum vectoradb-distro.tar.gz > mine.txt
-          awk '{print $2}' mine.txt > names.txt
-          grep -vFf names.txt existing.txt > SHA256SUMS || : > SHA256SUMS
-          cat mine.txt >> SHA256SUMS
-          sort -k2 -o SHA256SUMS SHA256SUMS
-          cat SHA256SUMS
-
-      - name: Attach the distro image
+      # The release may not exist yet if this job gets here before release.yml.
+      - name: Create the release if it does not exist
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           gh release view "$TAG" >/dev/null 2>&1 ||
             gh release create "$TAG" --prerelease --generate-notes --title "$TAG"
-          gh release upload "$TAG" \
-            dist/vectoradb-distro.tar.gz \
-            dist/SHA256SUMS --clobber
+
+      # Merged, not replaced: release.yml publishes sums for the binaries into
+      # the same SHA256SUMS. Every asset the installer or setup downloads must be
+      # listed, or verification silently skips it. The shared script matches
+      # entries by exact name and re-checks after uploading, so whichever job
+      # finishes last keeps the other's entries.
+      - name: Publish checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          cd dist
+          bash ../scripts/release-checksums.sh "$TAG" vectoradb-distro.tar.gz
+
+      - name: Attach the distro image
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: gh release upload "$TAG" dist/vectoradb-distro.tar.gz --clobber

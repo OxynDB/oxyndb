@@ -24,6 +24,10 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test ./...
+      # The release workflows share one SHA256SUMS; this checks the script that
+      # merges into it never drops another job's entries.
+      - name: Release checksum merging
+        run: bash scripts/test_release_checksums.sh
       - name: gofmt
         run: |
           unformatted=$(gofmt -l cmd internal)
