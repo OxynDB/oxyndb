@@ -118,6 +118,45 @@ assert_eq "VECTORADB_MCP_SUPERUSER=1 restores the old role" \
   "$(mcp_call run_sql '{"sql":"SELECT session_user"}' VECTORADB_MCP_SUPERUSER=1 | grep -c 'vectoradb')" "1"
 curl -sk -H "$AUTH" -X DELETE "$AGENTS/agents/v2itest/branch" >/dev/null 2>&1
 
+echo "### 2. ledger 2.0 capture (xid, LSN, provenance, override use)"
+# pgerr keeps stderr, for assertions on error messages (pg discards it).
+pgerr() { local c="$1"; shift; sudo docker exec "$c" psql -U vectoradb -d vectoradb -tAc "$*" 2>&1; }
+assert_eq "ledger 2.0 is installed on main at start" "$(pg vec-main "SELECT vdb.ledger_v2_version()")" "2.0-phase2"
+assert_eq "ledger upgrade is idempotent (run twice)" \
+  "$($S ledger upgrade main >/dev/null 2>&1 && $S ledger upgrade main >/dev/null 2>&1; echo $?)" "0"
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2cap; DROP TABLE IF EXISTS v2off; DROP TABLE IF EXISTS v2safe" >/dev/null
+PGOPTIONS='-c vdb.task=task-42 -c vdb.call_hash=abc123' PGPASSWORD="$KEY" psql "$GATEWAY/main" -qc "CREATE TABLE v2cap(x int)" >/dev/null 2>&1
+CAPID="$(pg vec-main "SELECT max(id) FROM vdb.schema_ledger WHERE command_tag='CREATE TABLE' AND object_identity='public.v2cap'")"
+assert_eq "every new ledger row gets a capture row" "$(pg vec-main "SELECT count(*) FROM vdb.ledger_ext WHERE ledger_id=$CAPID")" "1"
+assert_eq "capture records the transaction and WAL position" \
+  "$(pg vec-main "SELECT (xid IS NOT NULL AND lsn IS NOT NULL)::text FROM vdb.ledger_ext WHERE ledger_id=$CAPID")" "true"
+assert_eq "capture records task and call hash from the session" \
+  "$(pg vec-main "SELECT task_id||'/'||call_hash FROM vdb.ledger_ext WHERE ledger_id=$CAPID")" "task-42/abc123"
+assert_eq "capture hash verifies" \
+  "$(pg vec-main "SELECT (e.ext_hash = vdb._ext_hash(e))::text FROM vdb.ledger_ext e WHERE ledger_id=$CAPID")" "true"
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE v2cap" >/dev/null
+assert_eq "override use is recorded" \
+  "$(pg vec-main "SELECT e.override_used::text FROM vdb.ledger_ext e JOIN vdb.schema_ledger s ON s.id=e.ledger_id WHERE s.command_tag='DROP TABLE' AND s.object_identity='public.v2cap' ORDER BY s.id DESC LIMIT 1")" "true"
+# Fail-safe: a capture that errors must never block the user's DDL.
+pg vec-main "ALTER TABLE vdb.ledger_ext ADD CONSTRAINT v2_test_fail CHECK (false) NOT VALID" >/dev/null
+gw "$KEY" main "CREATE TABLE v2safe(x int)" >/dev/null
+assert_eq "a failing capture does not block DDL" "$(pg vec-main "SELECT to_regclass('public.v2safe') IS NOT NULL")" "t"
+assert_eq "the base ledger still records that DDL" \
+  "$(pg vec-main "SELECT count(*) FROM vdb.schema_ledger WHERE command_tag='CREATE TABLE' AND object_identity='public.v2safe'")" "1"
+pg vec-main "ALTER TABLE vdb.ledger_ext DROP CONSTRAINT v2_test_fail" >/dev/null
+# Kill switch: vdb.v2=off stops capture for new sessions.
+pg vec-main "ALTER DATABASE vectoradb SET vdb.v2 = 'off'" >/dev/null
+gw "$KEY" main "CREATE TABLE v2off(x int)" >/dev/null
+OFFID="$(pg vec-main "SELECT max(id) FROM vdb.schema_ledger WHERE object_identity='public.v2off'")"
+assert_eq "kill switch disables capture" "$(pg vec-main "SELECT count(*) FROM vdb.ledger_ext WHERE ledger_id=$OFFID")" "0"
+pg vec-main "ALTER DATABASE vectoradb RESET vdb.v2" >/dev/null
+assert_eq "capture table is append-only" \
+  "$(pgerr vec-main "DELETE FROM vdb.ledger_ext WHERE ledger_id=$CAPID" | grep -c 'append-only')" "1"
+assert_eq "clients cannot write capture rows" \
+  "$(gw "$KEY" main "INSERT INTO vdb.ledger_ext(ledger_id) VALUES (-1)" | grep -c 'permission denied')" "1"
+assert_eq "base hash chain still verifies after 2.0 activity" "$($S ledger verify 2>&1 | grep -c 'ledger intact')" "1"
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2off; DROP TABLE IF EXISTS v2safe" >/dev/null
+
 echo
 echo "==== ${PASS} passed, ${FAIL} failed ===="
 [ "$FAIL" -eq 0 ]

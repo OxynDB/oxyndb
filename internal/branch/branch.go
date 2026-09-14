@@ -185,6 +185,7 @@ func Init() error {
 		if err := InstallLedger("main"); err != nil { // ensure the ledger is present
 			return err
 		}
+		ensureLedgerV2BestEffort("main")
 		return syncAppRole("main")
 	}
 	store := activeStorage()
@@ -215,6 +216,7 @@ func Init() error {
 	if err := InstallLedger("main"); err != nil {
 		return err
 	}
+	ensureLedgerV2BestEffort("main")
 	return syncAppRole("main")
 }
 

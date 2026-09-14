@@ -1,0 +1,30 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package branch
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/vectoradb/vectoradb/internal/ledger"
+)
+
+// EnsureLedgerV2 installs (or upgrades) the Schema Ledger 2.0 additions on a
+// branch. It is idempotent and needs the base ledger (InstallLedger) first.
+func EnsureLedgerV2(name string) error {
+	if name == "" {
+		name = "main"
+	}
+	if err := psqlStdin(name, ledger.SchemaV2); err != nil {
+		return fmt.Errorf("installing ledger 2.0 on %q: %w", name, err)
+	}
+	return nil
+}
+
+// ensureLedgerV2BestEffort installs the 2.0 additions during engine start. 2.0
+// must never stop the stack from coming up, so a failure is only reported.
+func ensureLedgerV2BestEffort(name string) {
+	if err := EnsureLedgerV2(name); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: %v — the base ledger is unaffected; retry with: vdb ledger upgrade %s\n", err, name)
+	}
+}
