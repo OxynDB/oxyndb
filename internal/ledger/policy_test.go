@@ -9,11 +9,15 @@ import (
 	"testing"
 )
 
+// lf normalises line endings: a Windows checkout may give text files CRLF.
+func lf(s string) string { return strings.ReplaceAll(s, "\r\n", "\n") }
+
 // The policy gate must stay additive and match the approved contract.
 func TestSchemaPolicy(t *testing.T) {
 	if SchemaPolicy == "" {
 		t.Fatal("SchemaPolicy is empty — is policy.sql embedded?")
 	}
+	SchemaPolicy := lf(SchemaPolicy)
 	for _, want := range []string{
 		"ERRCODE = 'VDB01'", "ERRCODE = 'VDB02'", // the two SQLSTATEs
 		"CREATE EVENT TRIGGER vdb_policy_start ON ddl_command_start", // sorts after vdb_guard_start
@@ -82,10 +86,11 @@ func TestParsePolicyDetail(t *testing.T) {
 
 // The example in the approved contract must stay valid.
 func TestPolicyContractExample(t *testing.T) {
-	doc, err := os.ReadFile("../../docs/policy-errors.md")
+	raw, err := os.ReadFile("../../docs/policy-errors.md")
 	if err != nil {
 		t.Skip("docs/policy-errors.md not found")
 	}
+	doc := []byte(lf(string(raw)))
 	m := regexp.MustCompile(`(?m)^DETAIL:  (\{.*\})$`).FindSubmatch(doc)
 	if m == nil {
 		t.Fatal("no DETAIL example in docs/policy-errors.md")
