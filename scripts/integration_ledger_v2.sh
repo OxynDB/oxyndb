@@ -151,6 +151,23 @@ gw "$KEY" main "CREATE TABLE v2off(x int)" >/dev/null
 OFFID="$(pg vec-main "SELECT max(id) FROM vdb.schema_ledger WHERE object_identity='public.v2off'")"
 assert_eq "kill switch disables capture" "$(pg vec-main "SELECT count(*) FROM vdb.ledger_ext WHERE ledger_id=$OFFID")" "0"
 pg vec-main "ALTER DATABASE vectoradb RESET vdb.v2" >/dev/null
+# …but it isn't a client's to flip: a session SET is honoured only for a superuser.
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2nocap; DROP TABLE IF EXISTS v2nocap_admin; DROP TABLE IF EXISTS v2nocap_su" >/dev/null
+gw "$KEY" main "SET vdb.v2 = 'off'; CREATE TABLE v2nocap(x int)" >/dev/null
+NCID="$(pg vec-main "SELECT max(id) FROM vdb.schema_ledger WHERE object_identity='public.v2nocap'")"
+assert_eq "a client's own SET vdb.v2 = 'off' does not skip capture" \
+  "$(pg vec-main "SELECT count(*) FROM vdb.ledger_ext WHERE ledger_id=${NCID:-0}")" "1"
+$S admin grant "$USER_EMAIL" --branch main >/dev/null 2>&1
+gw "$KEY" main "SET vdb.v2 = 'off'; CREATE TABLE v2nocap_admin(x int)" >/dev/null
+NCID="$(pg vec-main "SELECT max(id) FROM vdb.schema_ledger WHERE object_identity='public.v2nocap_admin'")"
+assert_eq "…nor does a vdb_admin member's" \
+  "$(pg vec-main "SELECT count(*) FROM vdb.ledger_ext WHERE ledger_id=${NCID:-0}")" "1"
+$S admin revoke "$USER_EMAIL" --branch main >/dev/null 2>&1
+pg vec-main "SET vdb.v2 = 'off'; CREATE TABLE v2nocap_su(x int)" >/dev/null
+NCID="$(pg vec-main "SELECT max(id) FROM vdb.schema_ledger WHERE object_identity='public.v2nocap_su'")"
+assert_eq "a superuser's session can still switch capture off" \
+  "$(pg vec-main "SELECT count(*) FROM vdb.ledger_ext WHERE ledger_id=${NCID:-0}")" "0"
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2nocap; DROP TABLE IF EXISTS v2nocap_admin; DROP TABLE IF EXISTS v2nocap_su" >/dev/null
 assert_eq "capture table is append-only" \
   "$(pgerr vec-main "DELETE FROM vdb.ledger_ext WHERE ledger_id=$CAPID" | grep -c 'append-only')" "1"
 assert_eq "clients cannot write capture rows" \

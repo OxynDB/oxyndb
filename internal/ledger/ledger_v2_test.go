@@ -40,6 +40,9 @@ func TestSchemaV2Safety(t *testing.T) {
 	for _, want := range []string{
 		"EXCEPTION WHEN OTHERS THEN",                   // capture errors become warnings
 		"current_setting('vdb.v2', true), '') = 'off'", // kill switch
+		"IF vdb._capture_disabled() THEN",              // …checked inside the fail-safe block
+		"s.setrole = 0",                                // …honoured database-wide
+		"rolname = session_user",                       // …or in a superuser's own session
 		"SET session_replication_role = replica;",      // install isn't recorded as user DDL
 		"SET session_replication_role = DEFAULT;",      // …and is restored
 		"REVOKE UPDATE, DELETE, TRUNCATE ON vdb.ledger_ext FROM PUBLIC;",
@@ -56,5 +59,24 @@ func TestSchemaV2Safety(t *testing.T) {
 	const raisingGuards = 2 // deny_ext_change (append-only), checkpoint_contiguous
 	if strings.Count(SchemaV2, "RETURNS trigger") != strings.Count(SchemaV2, "EXCEPTION WHEN OTHERS THEN")+raisingGuards {
 		t.Error("every 2.0 trigger except the raising guards must catch its own errors")
+	}
+}
+
+// A client's own SET vdb.v2 = 'off' must not skip capture: the switch is read
+// only through vdb._capture_disabled, never directly by a trigger.
+func TestCaptureKillSwitchNotClientSettable(t *testing.T) {
+	fn := strings.Index(SchemaV2, "CREATE OR REPLACE FUNCTION vdb._capture_disabled()")
+	body := strings.Index(SchemaV2, "CREATE OR REPLACE FUNCTION vdb.capture_ext()")
+	if fn < 0 || body < 0 || fn > body {
+		t.Fatal("vdb._capture_disabled must be defined before capture_ext")
+	}
+	if strings.Count(SchemaV2, "current_setting('vdb.v2'") != 1 {
+		t.Error("vdb.v2 must be read in exactly one place, vdb._capture_disabled")
+	}
+	disabled := SchemaV2[fn:body]
+	for _, want := range []string{"pg_db_role_setting", "s.setrole = 0", "c.cfg = 'vdb.v2=off'", "rolsuper", "SECURITY DEFINER"} {
+		if !strings.Contains(disabled, want) {
+			t.Errorf("vdb._capture_disabled is missing %q", want)
+		}
 	}
 }
