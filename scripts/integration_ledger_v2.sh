@@ -121,7 +121,7 @@ curl -sk -H "$AUTH" -X DELETE "$AGENTS/agents/v2itest/branch" >/dev/null 2>&1
 echo "### 2. ledger 2.0 capture (xid, LSN, provenance, override use)"
 # pgerr keeps stderr, for assertions on error messages (pg discards it).
 pgerr() { local c="$1"; shift; sudo docker exec "$c" psql -U vectoradb -d vectoradb -tAc "$*" 2>&1; }
-assert_eq "ledger 2.0 is installed on main at start" "$(pg vec-main "SELECT vdb.ledger_v2_version()")" "2.0-phase2"
+assert_eq "ledger 2.0 is installed on main at start" "$(pg vec-main "SELECT vdb.ledger_v2_version()")" "2.0-phase3"
 assert_eq "ledger upgrade is idempotent (run twice)" \
   "$($S ledger upgrade main >/dev/null 2>&1 && $S ledger upgrade main >/dev/null 2>&1; echo $?)" "0"
 pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2cap; DROP TABLE IF EXISTS v2off; DROP TABLE IF EXISTS v2safe" >/dev/null
@@ -156,6 +156,90 @@ assert_eq "clients cannot write capture rows" \
   "$(gw "$KEY" main "INSERT INTO vdb.ledger_ext(ledger_id) VALUES (-1)" | grep -c 'permission denied')" "1"
 assert_eq "base hash chain still verifies after 2.0 activity" "$($S ledger verify 2>&1 | grep -c 'ledger intact')" "1"
 pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2off; DROP TABLE IF EXISTS v2safe" >/dev/null
+
+echo "### 3. checkpoints, anchors and the independent verifier"
+VERIFY="${VECTORADB_VERIFY_BIN:-/tmp/vdb-verify}"
+ANCH="${VECTORADB_ANCHOR_DIR:-$HOME/.vectoradb/anchors}"
+assert_eq "checkpoints table is installed" "$(pg vec-main "SELECT to_regclass('vdb.ledger_checkpoints') IS NOT NULL")" "t"
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2cp" >/dev/null
+gw "$KEY" main "CREATE TABLE v2cp(x int)" >/dev/null
+CP_OUT="$($S ledger checkpoint main 2>&1)"
+assert_eq "manual checkpoint anchors new ledger entries" "$(echo "$CP_OUT" | grep -c '^checkpoint #')" "1"
+CP_FILE="$(echo "$CP_OUT" | awk '$1=="anchor"{print $2}')"
+assert_eq "anchor file is read-only" "$(stat -c '%a' "$CP_FILE" 2>/dev/null)" "444"
+assert_eq "anchor uses the published format" \
+  "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["format"])' "$CP_FILE" 2>/dev/null)" "vectoradb-ledger-anchor/1"
+assert_eq "a checkpoint with nothing new is a no-op" "$($S ledger checkpoint main 2>&1 | grep -c 'nothing new')" "1"
+assert_eq "database refuses a checkpoint that doesn't continue the sequence" \
+  "$(pgerr vec-main "INSERT INTO vdb.ledger_checkpoints(from_id,to_id,entry_count,merkle_root,prev_root,algorithm) VALUES (1,1,1,'x','','t')" | grep -c 'must start at')" "1"
+assert_eq "checkpoints are append-only" "$(pgerr vec-main "DELETE FROM vdb.ledger_checkpoints" | grep -c 'append-only')" "1"
+
+# fresh_branch <name>: a clean branch whose 3 newest ledger entries are anchored.
+fresh_branch() {
+  $S branch delete "$1" >/dev/null 2>&1; rm -rf "$ANCH/$1"
+  $S branch create "$1" >/dev/null 2>&1
+  $S ledger upgrade "$1" >/dev/null 2>&1
+  for t in v2i_a v2i_b v2i_c; do pg "vec-$1" "CREATE TABLE $t(x int)" >/dev/null; done
+  $S ledger checkpoint "$1" >/dev/null 2>&1
+}
+integrity_state() { $S ledger integrity "$1" 2>&1 | head -1 | grep -o 'INTACT\|TAMPERED'; }
+
+fresh_branch v2int
+V2DSN="postgresql://vectoradb:$KEY@127.0.0.1:6432/v2int"
+assert_eq "integrity is INTACT on an untampered branch" "$(integrity_state v2int)" "INTACT"
+assert_eq "REST integrity agrees" "$(curl -sk -H "$AUTH" "$API/api/branches/v2int/ledger/integrity" | jget intact)" "True"
+assert_eq "MCP ledger_integrity agrees" "$(mcp_call ledger_integrity '{"branch":"v2int"}' | grep -c 'INTACT')" "1"
+"$VERIFY" --dsn "$V2DSN" --anchors "$ANCH/v2int" >/dev/null 2>&1
+assert_eq "vdb-verify on the live database agrees (exit 0)" "$?" "0"
+$S ledger export v2int > /tmp/v2int.jsonl 2>/dev/null
+assert_eq "export has one line per ledger entry" "$(wc -l < /tmp/v2int.jsonl | tr -d ' ')" "$(pg vec-v2int "SELECT count(*) FROM vdb.schema_ledger")"
+"$VERIFY" --export /tmp/v2int.jsonl --anchors "$ANCH/v2int" >/dev/null 2>&1
+assert_eq "vdb-verify on the exported file agrees (exit 0)" "$?" "0"
+
+# Forged edit: change an anchored entry, then rewrite the whole hash chain so the
+# in-database check passes again. Only the anchors can catch this.
+FORGE="SET session_replication_role = replica;
+UPDATE vdb.schema_ledger SET statement = statement || ' -- forged' WHERE id = (SELECT max(id) FROM vdb.schema_ledger);
+DO \$\$ DECLARE r record; prev text := ''; BEGIN
+  FOR r IN SELECT id FROM vdb.schema_ledger WHERE row_hash IS NOT NULL ORDER BY id LOOP
+    UPDATE vdb.schema_ledger SET prev_hash = prev WHERE id = r.id;
+    UPDATE vdb.schema_ledger s SET row_hash = vdb._ledger_hash(s) WHERE s.id = r.id RETURNING s.row_hash INTO prev;
+  END LOOP; END \$\$;"
+pg vec-v2int "$FORGE" >/dev/null
+assert_eq "forged edit: the in-database hash-chain check is fooled" "$($S ledger verify v2int 2>&1 | grep -c 'ledger intact')" "1"
+assert_eq "forged edit: integrity against the anchors is TAMPERED" "$(integrity_state v2int)" "TAMPERED"
+"$VERIFY" --dsn "$V2DSN" --anchors "$ANCH/v2int" >/dev/null 2>&1
+assert_eq "forged edit: vdb-verify exits 1" "$?" "1"
+
+fresh_branch v2int
+pg vec-v2int "SET session_replication_role = replica; DELETE FROM vdb.schema_ledger WHERE id = (SELECT max(id) FROM vdb.schema_ledger)" >/dev/null
+assert_eq "deleted newest anchored entry: the in-database check still passes" "$($S ledger verify v2int 2>&1 | grep -c 'ledger intact')" "1"
+assert_eq "deleted newest anchored entry: integrity is TAMPERED" "$(integrity_state v2int)" "TAMPERED"
+
+fresh_branch v2int
+pg vec-v2int "SET session_replication_role = replica; DELETE FROM vdb.schema_ledger" >/dev/null
+assert_eq "wiped ledger: integrity is TAMPERED" "$(integrity_state v2int)" "TAMPERED"
+
+fresh_branch v2int
+pg vec-v2int "SET session_replication_role = replica; DELETE FROM vdb.ledger_checkpoints" >/dev/null
+assert_eq "the anchor files, not the database's copy, are the source of truth" "$(integrity_state v2int)" "INTACT"
+$S branch delete v2int >/dev/null 2>&1; rm -rf "$ANCH/v2int" /tmp/v2int.jsonl
+
+echo "### 3b. scheduled checkpoints"
+$S stop >/dev/null 2>&1; sleep 1
+VECTORADB_CHECKPOINT_INTERVAL=15s $S start >/dev/null 2>&1; sleep 5
+BEFORE="$(pg vec-main "SELECT count(*) FROM vdb.ledger_checkpoints")"
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2sched" >/dev/null
+gw "$KEY" main "CREATE TABLE v2sched(x int)" >/dev/null
+for i in $(seq 1 12); do
+  [ "$(pg vec-main "SELECT count(*) FROM vdb.ledger_checkpoints")" -gt "$BEFORE" ] && break
+  sleep 5
+done
+assert_eq "the scheduler anchors new entries on its own" \
+  "$([ "$(pg vec-main "SELECT count(*) FROM vdb.ledger_checkpoints")" -gt "$BEFORE" ] && echo yes)" "yes"
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2sched; DROP TABLE IF EXISTS v2cp" >/dev/null
+$S stop >/dev/null 2>&1; sleep 1
+$S start >/dev/null 2>&1; sleep 5
 
 echo
 echo "==== ${PASS} passed, ${FAIL} failed ===="

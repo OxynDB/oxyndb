@@ -44,13 +44,17 @@ func TestSchemaV2Safety(t *testing.T) {
 		"SET session_replication_role = DEFAULT;",      // …and is restored
 		"REVOKE UPDATE, DELETE, TRUNCATE ON vdb.ledger_ext FROM PUBLIC;",
 		"CREATE TABLE IF NOT EXISTS vdb.ledger_ext", // idempotent
+		"CREATE TABLE IF NOT EXISTS vdb.ledger_checkpoints",
+		"REVOKE UPDATE, DELETE, TRUNCATE ON vdb.ledger_checkpoints FROM PUBLIC;",
 	} {
 		if !strings.Contains(SchemaV2, want) {
 			t.Errorf("ledger_v2.sql is missing %q", want)
 		}
 	}
-	if strings.Count(SchemaV2, "RETURNS trigger") != strings.Count(SchemaV2, "EXCEPTION WHEN OTHERS THEN")+1 {
-		// capture_ext is fail-safe; deny_ext_change is the one trigger that must raise.
-		t.Error("every 2.0 row trigger except the append-only guard must catch its own errors")
+	// Guards whose job is to refuse a write must raise; every other 2.0 trigger
+	// must catch its own errors.
+	const raisingGuards = 2 // deny_ext_change (append-only), checkpoint_contiguous
+	if strings.Count(SchemaV2, "RETURNS trigger") != strings.Count(SchemaV2, "EXCEPTION WHEN OTHERS THEN")+raisingGuards {
+		t.Error("every 2.0 trigger except the raising guards must catch its own errors")
 	}
 }

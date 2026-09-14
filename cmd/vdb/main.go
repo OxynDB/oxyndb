@@ -71,6 +71,9 @@ Schema ledger (RECORD layer):
   ledger [branch] [--limit N]  Show captured DDL changes — attributed & policy-checked
   ledger verify [branch]       Verify the tamper-evident hash chain is intact
   ledger upgrade [branch|--all] Apply the current ledger definition to existing branches
+  ledger checkpoint [branch]   Anchor new ledger entries outside the database (Merkle checkpoint)
+  ledger integrity [branch]    Check the ledger against its anchors (detects rewritten history)
+  ledger export [branch]       Write every ledger entry as JSON lines (for vdb-verify / audits)
   ledger revert --to <ts>      Time-travel revert of a branch's schema+data to a moment
 
 Migration:
@@ -352,6 +355,9 @@ func pipelineCmd(args []string) {
 // ledgerCmd handles `vdb ledger [branch] [--limit N]` and
 // `vdb ledger revert --to <ts>` (time-travel restore of the branch's schema+data).
 func ledgerCmd(args []string) {
+	if ledgerV2Cmd(args) { // checkpoint, integrity, export
+		return
+	}
 	if len(args) > 0 && args[0] == "revert" {
 		ts := restoreArg(args[1:])
 		if ts == "" {

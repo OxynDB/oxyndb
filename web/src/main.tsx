@@ -9,6 +9,7 @@ import Landing from './pages/Landing'
 import Docs from './pages/Docs'
 import Guide from './pages/Guide'
 import Ledger from './pages/Ledger'
+import Integrity from './pages/Integrity'
 import Import from './pages/Import'
 import Pipelines from './pages/Pipelines'
 import PipelineEditor from './pages/PipelineEditor'
@@ -77,6 +78,7 @@ function Layout() {
           {user && <>
             <NavLink to="/dashboard">Dashboard</NavLink>
             <NavLink to="/ledger">Ledger</NavLink>
+            <NavLink to="/integrity">Integrity</NavLink>
             <NavLink to="/console">Console</NavLink>
             <NavLink to="/import">Import</NavLink>
             <NavLink to="/pipelines">Pipelines</NavLink>
@@ -112,6 +114,7 @@ const router = createBrowserRouter([
       { path: 'login', element: <Login /> },
       { path: 'dashboard', element: <RequireAuth><Dashboard /></RequireAuth> },
       { path: 'ledger', element: <RequireAuth><Ledger /></RequireAuth> },
+      { path: 'integrity', element: <RequireAuth><Integrity /></RequireAuth> },
       { path: 'import', element: <RequireAuth><Import /></RequireAuth> },
       { path: 'pipelines', element: <RequireAuth><Pipelines /></RequireAuth> },
       { path: 'pipelines/:id', element: <RequireAuth><PipelineEditor /></RequireAuth> },

@@ -76,6 +76,22 @@ export const getLedger = (name: string, filters: Record<string, string> = {}) =>
   const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v)).toString()
   return req('GET', `${API}/api/branches/${name}/ledger${qs ? '?' + qs : ''}`) as Promise<QueryResult>
 }
+// --- ledger integrity (Schema Ledger 2.0) ---
+export type IntegrityReport = {
+  intact: boolean; rows: number; chained_rows: number; legacy_rows: number
+  checkpoints: number; anchored_rows: number; unanchored_rows: number
+  first_broken_id?: number; problems: string[]; notes: string[]
+}
+export type Checkpoint = {
+  checkpoint_id: number; from_id: number; to_id: number; entry_count: number
+  merkle_root: string; prev_root: string; last_row_hash: string; created_at: string
+}
+export const getIntegrity = (name: string) =>
+  req('GET', `${API}/api/branches/${name}/ledger/integrity`) as Promise<IntegrityReport>
+export const createCheckpoint = (name: string) =>
+  req('POST', `${API}/api/branches/${name}/ledger/checkpoint`) as Promise<{ checkpoint: Checkpoint | null; anchor_path?: string; status: string }>
+export const exportLedgerUrl = (name: string) => `${API}/api/branches/${name}/ledger/export`
+
 // --- migration (streamed as Server-Sent Events) ---
 export type ImportResult = { status: string; target: string; tables: number }
 export type ImportEvent =
