@@ -102,11 +102,17 @@ prepare_images() {
 	#
 	# Saved to $work, not into $root: this runs before the rootfs necessarily
 	# exists. The repackage step moves it in.
+	#
+	# MinIO no longer publishes to Docker Hub, so its images come from quay.io,
+	# pinned to the releases the engine runs (internal/branch/images.go; a unit
+	# test keeps these names in step with it).
+	local minio_image="quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
+	local mc_image="quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z"
 	docker build -t vectoradb/postgres-walg:16 "$repo/docker/postgres"
-	docker pull -q minio/minio:latest
-	docker pull -q minio/mc:latest
+	docker pull -q "$minio_image"
+	docker pull -q "$mc_image"
 	docker save -o "$work/vectoradb-images.tar" \
-		vectoradb/postgres-walg:16 minio/minio:latest minio/mc:latest
+		vectoradb/postgres-walg:16 "$minio_image" "$mc_image"
 	timer "images" "$t"
 }
 

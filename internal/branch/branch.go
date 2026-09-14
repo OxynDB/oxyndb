@@ -508,14 +508,14 @@ func Up() error {
 			"-e", "MINIO_ROOT_PASSWORD="+minioPass(),
 			"-p", "9000:9000", "-p", "9001:9001",
 			"-v", "vectoradb-minio:/data",
-			"minio/minio:latest", "server", "/data", "--console-address", ":9001",
+			minioImage(), "server", "/data", "--console-address", ":9001",
 		); err != nil {
 			return err
 		}
 	}
 	// Create the WAL bucket (idempotent).
 	if err := run("docker", "run", "--rm", "--network", network,
-		"--entrypoint", "sh", "minio/mc:latest", "-c",
+		"--entrypoint", "sh", mcImage(), "-c",
 		fmt.Sprintf("until mc alias set local http://minio:9000 %s %s; do sleep 1; done; mc mb -p local/vectoradb-wal", minioUser(), minioPass()),
 	); err != nil {
 		return err
