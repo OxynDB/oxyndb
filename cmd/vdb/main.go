@@ -66,6 +66,7 @@ Branching:
   branch reset <name>   Re-clone from parent, discarding everything done on it
   branch suspend <name> Stop a branch (data preserved); resumes on next connect
   branch resume <name>  Start a suspended branch
+  branch diff <a> <b>   Schema changes made on each branch since they split (from Blackbox; --json)
 
 Blackbox — the database's record of every schema change (RECORD layer; vdb ledger … works too):
   blackbox [branch] [--limit N]   Show captured DDL changes — attributed & policy-checked
@@ -76,6 +77,7 @@ Blackbox — the database's record of every schema change (RECORD layer; vdb led
   blackbox export [branch]        Write every entry as JSON lines (for vdb-verify / audits)
   blackbox entries [branch]       Newest entries with their ids (--limit N)
   blackbox sessions [branch]      Agent sessions: agent, task, parent session, entries (--limit N)
+  blackbox diff <a> <b>           Changes on each branch since they split, and objects both changed (--json)
   blackbox branch-before <id>     New branch of main as it was just before entry <id> (--as name)
   blackbox revert --to <ts>       Time-travel revert of a branch's schema+data to a moment
 
@@ -87,6 +89,10 @@ Blackbox policy gate — checks every schema change before it runs (docs/policy-
   policy add <rule> --command "ALTER TABLE" [--pattern <regex>] [--block] --reason "…" [--hint "…"]
   policy remove <rule>            Remove a rule you added (built-in rules can only be disabled)
   policy evaluations [--limit N]  Recent warnings, blocks and overrides
+
+Impact analysis — what a change would affect, before you run it:
+  impact "<SQL>" [--branch b]     Dependents (views, foreign keys, indexes, …), other branches, policy, score
+  impact --object <name> [--column c]   The same for a table, view or index directly (--json for JSON)
 
 Migration:
   import --from <src> [--as <name>]  Migrate a DB into a new instance. <src> is a
@@ -226,6 +232,8 @@ func main() {
 		must(branch.Restore(ts))
 	case "branch":
 		branchCmd(os.Args[2:])
+	case "impact":
+		impactCmd(os.Args[2:])
 	case "ledger", "blackbox": // Blackbox is the product name; both commands work
 		ledgerCmd(os.Args[2:])
 	case "import":
@@ -478,6 +486,8 @@ func branchCmd(args []string) {
 			os.Exit(2)
 		}
 		must(branch.Wake(args[1]))
+	case "diff":
+		diffCmd(args[1:])
 	default:
 		fmt.Printf("unknown branch subcommand: %s\n", args[0])
 		os.Exit(2)

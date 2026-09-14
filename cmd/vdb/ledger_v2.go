@@ -18,6 +18,7 @@ import (
 //	vdb ledger export [branch]       every entry as JSON lines (--format jsonl)
 //	vdb ledger entries [branch]      newest entries with their ids (--limit N)
 //	vdb ledger sessions [branch]     agent sessions: agent, task, parent session (--limit N)
+//	vdb ledger diff <a> <b>          schema changes on each branch since they split (--json)
 //	vdb ledger branch-before <id>    a new branch of main as it was just before entry <id>
 //
 // It returns false for anything else, leaving the existing subcommands untouched.
@@ -78,6 +79,8 @@ func ledgerV2Cmd(args []string) bool {
 		ss, err := branch.AgentSessions(name, limit)
 		must(err)
 		fmt.Println(branch.FormatAgentSessions(ss))
+	case "diff":
+		diffCmd(args[1:])
 	case "branch-before":
 		branchBeforeCmd(args[1:])
 	default:

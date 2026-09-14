@@ -26,6 +26,10 @@ func EnsureLedgerV2(name string) error {
 	if err := psqlStdin(name, ledger.SchemaProvenance); err != nil {
 		return fmt.Errorf("installing Blackbox provenance on %q: %w", name, err)
 	}
+	// Impact analysis (vdb.blast_radius) only reads the catalog.
+	if err := psqlStdin(name, ledger.SchemaImpact); err != nil {
+		return fmt.Errorf("installing Blackbox impact analysis on %q: %w", name, err)
+	}
 	return nil
 }
 

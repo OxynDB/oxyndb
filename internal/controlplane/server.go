@@ -57,6 +57,7 @@ func Serve(addr string) error {
 	api := http.NewServeMux()
 	registerAPI(api)
 	registerPipelines(api, store)                        // /api/pipelines* (ETL)
+	registerImpact(api)                                  // /api/branches/{name}/impact, /api/{ledger,blackbox}/diff
 	registerPolicy(api)                                  // /api/branches/{name}/policies* (Blackbox policy gate)
 	registerLedgerV2(api)                                // /api/branches/{name}/ledger/{integrity,checkpoint,export,entries,{id}/branch}
 	store.MountKeys(api)                                 // /api/keys (protected via Authn below)

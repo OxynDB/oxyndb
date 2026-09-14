@@ -597,6 +597,106 @@ assert_eq "the hash chain still verifies" \
   "$(curl -sk -H "$AUTH" "$API/api/branches/main/ledger/verify" | python3 -c 'import sys,json; print(json.load(sys.stdin)["rows"][0][2])')" "0"
 pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2exec; DROP TABLE IF EXISTS v2exec_dry" >/dev/null
 
+echo "### 8. impact analysis and Blackbox diff"
+for b in v2imp-br v2diff-a; do $S branch delete "$b" >/dev/null 2>&1; done
+$S policy warn drop-column >/dev/null 2>&1
+drop_imp() {
+  pg vec-main "SET vdb.allow_destructive=on; DROP VIEW IF EXISTS v2imp_big; DROP VIEW IF EXISTS v2imp_totals; DROP TABLE IF EXISTS v2imp_items; DROP TABLE IF EXISTS v2imp_orders; DROP TABLE IF EXISTS v2imp_mainonly; DROP TABLE IF EXISTS v2diff_main_only" >/dev/null
+}
+drop_imp
+gw "$KEY" main "CREATE TABLE v2imp_orders(id int PRIMARY KEY, total numeric, note text)" >/dev/null
+gw "$KEY" main "CREATE TABLE v2imp_items(id int, order_id int REFERENCES v2imp_orders(id))" >/dev/null
+gw "$KEY" main "CREATE VIEW v2imp_totals AS SELECT id, total FROM v2imp_orders" >/dev/null
+gw "$KEY" main "CREATE VIEW v2imp_big AS SELECT * FROM v2imp_totals WHERE total > 100" >/dev/null
+gw "$KEY" main "CREATE INDEX v2imp_note_idx ON v2imp_orders(note)" >/dev/null
+
+R="$($S impact "DROP TABLE v2imp_orders" --json)"
+assert_eq "impact: the table is found and the change is destructive" \
+  "$(echo "$R" | jf 'str(d["found"])+" "+d["action"]+" "+str(d["destructive"])+" "+d["target"]+" "+d["type"]')" "True drop True public.v2imp_orders table"
+assert_eq "impact: the view on it (depth 1)" \
+  "$(echo "$R" | jf '[(x["type"], x["depth"]) for x in d["dependents"] if x["identity"]=="public.v2imp_totals"]')" "[('view', 1)]"
+assert_eq "impact: the view on that view (depth 2, via the first)" \
+  "$(echo "$R" | jf '[(x["depth"], x["via"]) for x in d["dependents"] if x["identity"]=="public.v2imp_big"]')" "[(2, 'public.v2imp_totals')]"
+assert_eq "impact: the foreign key from another table" \
+  "$(echo "$R" | jf 'len([x for x in d["dependents"] if x["type"]=="table constraint" and x["relation"]=="public.v2imp_items" and not x["same_relation"]])')" "1"
+assert_eq "impact: the index on it" \
+  "$(echo "$R" | jf '[(x["relation"], x["same_relation"]) for x in d["dependents"] if x["identity"]=="public.v2imp_note_idx"]')" "[('public.v2imp_orders', True)]"
+assert_eq "impact: scored high, with reasons" \
+  "$(echo "$R" | jf 'd["level"]+" "+str(d["score"] >= 15)+" "+str(len(d["reasons"]) > 1)')" "high True True"
+assert_eq "impact on a column: only what uses that column" \
+  "$($S impact "ALTER TABLE v2imp_orders DROP COLUMN total" --json | jf 'd["column"]+" "+d["action"]+" "+",".join(sorted(x["identity"] for x in d["dependents"]))')" \
+  "total drop-column public.v2imp_big,public.v2imp_totals"
+assert_eq "impact on another column: its index, not the views" \
+  "$($S impact "ALTER TABLE v2imp_orders DROP COLUMN note" --json | jf '",".join(sorted(x["identity"] for x in d["dependents"]))')" "public.v2imp_note_idx"
+assert_eq "impact reads quoted, schema-qualified names" \
+  "$($S impact 'ALTER TABLE public."v2imp_orders" ALTER COLUMN "total" TYPE bigint' --json | jf 'd["target"]+" "+d["column"]+" "+d["action"]')" \
+  "public.v2imp_orders total alter-column-type"
+assert_eq "a new index is not destructive" \
+  "$($S impact "CREATE INDEX v2imp_total_idx ON v2imp_orders(total)" --json | jf 'd["action"]+" "+str(d["destructive"])')" "create-index False"
+assert_eq "a missing object is reported, not an error" \
+  "$($S impact "DROP TABLE v2imp_nope" --json | jf 'str(d["found"])+" "+d["level"]')" "False none"
+assert_eq "a statement without a target asks for --object" "$($S impact "SELECT 1" 2>&1 | grep -c -- '--object')" "1"
+assert_eq "--object on a view finds the view built on it" \
+  "$($S impact --object v2imp_totals --json | jf '",".join(x["identity"] for x in d["dependents"])')" "public.v2imp_big"
+assert_eq "the depth limit is reported (as a client)" \
+  "$(gw "$KEY" main "SELECT vdb.blast_radius('v2imp_orders', NULL, 1)->>'truncated'")" "true"
+
+$S branch create v2imp-br >/dev/null 2>&1
+gw "$KEY" main "CREATE TABLE v2imp_mainonly(x int)" >/dev/null
+assert_eq "impact: a branch cloned after the object existed has it (with its parent)" \
+  "$($S impact "DROP TABLE v2imp_orders" --json | jf '[(x["present"], x["parent"]) for x in d["branches"] if x["branch"]=="v2imp-br"]')" "[(True, 'main')]"
+assert_eq "impact: a newer object isn't on that branch" \
+  "$($S impact "DROP TABLE v2imp_mainonly" --json | jf '[x["present"] for x in d["branches"] if x["branch"]=="v2imp-br"]')" "[False]"
+
+$S policy block drop-column >/dev/null 2>&1
+assert_eq "impact includes the policy verdict in its score" \
+  "$($S impact "ALTER TABLE v2imp_orders DROP COLUMN total" --json | jf '",".join(p["rule_id"]+":"+p["action"] for p in d["policy"])+" "+str(any("would block" in r for r in d["reasons"]))')" \
+  "drop-column:block True"
+$S policy warn drop-column >/dev/null 2>&1
+
+assert_eq "REST impact matches the CLI" \
+  "$(curl -sk -X POST -H "$AUTH" -d '{"sql":"DROP TABLE v2imp_orders"}' "$API/api/branches/main/impact" | jf 'd["target"]+" "+str(len(d["dependents"]))')" \
+  "$($S impact "DROP TABLE v2imp_orders" --json | jf 'd["target"]+" "+str(len(d["dependents"]))')"
+assert_eq "REST impact without sql or object is 400" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' -X POST -H "$AUTH" -d '{}' "$API/api/branches/main/impact")" "400"
+assert_eq "MCP impact" \
+  "$(mcp_call impact '{"sql":"ALTER TABLE v2imp_orders DROP COLUMN total"}' | jf 'd["column"]+" "+str(d["level"] in ("low","medium","high"))')" "total True"
+assert_eq "execute_change includes the impact" \
+  "$(mcp_exec '{"sql":"ALTER TABLE v2imp_orders DROP COLUMN total","dry_run":true}' | jf 'd["status"]+" "+d["impact"]["target"]+" "+d["impact"]["column"]')" \
+  "preview public.v2imp_orders total"
+
+$S branch create v2diff-a >/dev/null 2>&1
+gw "$KEY" main "CREATE TABLE v2diff_main_only(x int)" >/dev/null
+gw "$KEY" main "ALTER TABLE v2imp_orders ADD COLUMN on_main int" >/dev/null
+gw "$KEY" v2diff-a "CREATE TABLE v2diff_branch_only(x int)" >/dev/null
+gw "$KEY" v2diff-a "ALTER TABLE v2imp_orders ADD COLUMN on_branch int" >/dev/null
+D="$($S blackbox diff main v2diff-a --json)"
+assert_eq "diff: the branch's parent and shared history" \
+  "$(echo "$D" | jf 'd["b_parent"]+" "+str(d["common_entries"] > 0)+" "+str(d["fork_after_id"] > 0)')" "main True True"
+assert_eq "diff: changes only on main" \
+  "$(echo "$D" | jf '",".join(sorted(set(x["object_identity"] for x in d["a_only"])))')" "public.v2diff_main_only,public.v2imp_orders"
+assert_eq "diff: changes only on the branch" \
+  "$(echo "$D" | jf '",".join(sorted(set(x["object_identity"] for x in d["b_only"])))')" "public.v2diff_branch_only,public.v2imp_orders"
+assert_eq "diff: the object both changed" \
+  "$(echo "$D" | jf '",".join(o["object_identity"] for o in d["both_touched"])')" "public.v2imp_orders"
+assert_eq "vdb branch diff gives the same diff" \
+  "$($S branch diff main v2diff-a --json | jf '(len(d["a_only"]), len(d["b_only"]), len(d["both_touched"]))')" \
+  "$(echo "$D" | jf '(len(d["a_only"]), len(d["b_only"]), len(d["both_touched"]))')"
+assert_eq "diff: text output names both sides" \
+  "$($S branch diff main v2diff-a | grep -c 'only on main\|only on v2diff-a\|changed on both')" "3"
+assert_eq "diff of a branch with itself is empty" \
+  "$($S blackbox diff main main --json | jf 'len(d["a_only"]) + len(d["b_only"]) + len(d["both_touched"])')" "0"
+assert_eq "REST diff on both paths" \
+  "$(curl -sk -H "$AUTH" "$API/api/ledger/diff?a=main&b=v2diff-a" | jf 'len(d["both_touched"])')|$(curl -sk -H "$AUTH" "$API/api/blackbox/diff?a=main&b=v2diff-a" | jf 'len(d["both_touched"])')" \
+  "1|1"
+assert_eq "REST diff with an unknown branch is 404" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' -H "$AUTH" "$API/api/ledger/diff?a=main&b=v2nope")" "404"
+assert_eq "MCP blackbox_diff" \
+  "$(mcp_call blackbox_diff '{"a":"main","b":"v2diff-a"}' | jf '",".join(o["object_identity"] for o in d["both_touched"])')" "public.v2imp_orders"
+
+for b in v2imp-br v2diff-a; do $S branch delete "$b" >/dev/null 2>&1; done
+drop_imp
+
 echo
 echo "==== ${PASS} passed, ${FAIL} failed ===="
 [ "$FAIL" -eq 0 ]

@@ -268,6 +268,7 @@ type ExecuteChangeResult struct {
 	Notices         []ChangeNotice        `json:"notices"`
 	Policy          *ledger.PolicyDetail  `json:"policy,omitempty"` // the rule that blocked the change (VDB01)
 	Error           *ChangeError          `json:"error,omitempty"`
+	Impact          *ImpactReport         `json:"impact,omitempty"` // what the change affects, when its target is recognised
 	BlackboxEntries []int64               `json:"blackbox_entries"`
 }
 
@@ -345,6 +346,9 @@ func ExecuteChange(req ExecuteChangeRequest) (ExecuteChangeResult, error) {
 		return ExecuteChangeResult{}, err
 	}
 	res.Command, res.PolicyPreview = tag, preview
+	if rep, err := Impact(name, req.SQL, "", ""); err == nil {
+		res.Impact = &rep
+	}
 	if req.DryRun {
 		res.Status = "preview"
 		return res, nil
