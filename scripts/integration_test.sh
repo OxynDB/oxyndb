@@ -25,8 +25,8 @@ $S start >/dev/null 2>&1; sleep 5
 printf 'password123\n' | $S user create test@vectoradb.dev >/dev/null 2>&1 || true
 KEY="$($S apikey create test@vectoradb.dev ci 2>/dev/null | grep -o 'vdb_[A-Za-z0-9_-]*')"
 AUTH="Authorization: Bearer $KEY"
-assert_eq "unauthenticated API is rejected" "$(curl -s -o /dev/null -w '%{http_code}' localhost:8080/api/status)" "401"
-assert_eq "control plane reports main ready" "$(curl -s -H "$AUTH" localhost:8080/api/status | jget mainReady)" "True"
+assert_eq "unauthenticated API is rejected" "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost:8080/api/status)" "401"
+assert_eq "control plane reports main ready" "$(curl -sk -H "$AUTH" https://localhost:8080/api/status | jget mainReady)" "True"
 assert_eq "gateway rejects a bad key" "$(PGPASSWORD=nope psql "$GATEWAY/main" -tAc 'select 1' 2>&1 | grep -c 'invalid API key')" "1"
 assert_eq "gateway accepts the API key" "$(PGPASSWORD="$KEY" psql "$GATEWAY/main" -tAc 'select 1' 2>/dev/null)" "1"
 
@@ -52,11 +52,11 @@ $S branch resume itb >/dev/null 2>&1
 assert_eq "branch resumes" "$(sudo docker inspect -f '{{.State.Status}}' vec-itb 2>/dev/null)" "running"
 
 echo "### 5. agent branch API"
-RESP="$(curl -s -H "$AUTH" -X POST localhost:8088/agents/itest/branch)"
+RESP="$(curl -sk -H "$AUTH" -X POST https://localhost:8088/agents/itest/branch)"
 DSN="$(echo "$RESP" | jget dsn)"
 psql "$DSN" -c "CREATE TABLE a(x int); INSERT INTO a VALUES (7);" >/dev/null 2>&1
 assert_eq "agent DB is usable via its DSN" "$(psql "$DSN" -tAc 'SELECT x FROM a' 2>/dev/null)" "7"
-curl -s -H "$AUTH" -X DELETE localhost:8088/agents/itest/branch >/dev/null
+curl -sk -H "$AUTH" -X DELETE https://localhost:8088/agents/itest/branch >/dev/null
 
 echo "### 6. HA: replication + failover"
 $S ha enable >/dev/null 2>&1; sleep 2

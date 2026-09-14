@@ -3,7 +3,7 @@
 # VectoraDB runs inside the Linux dev VM (ZFS + Docker); day-to-day operation is
 # via `lima /tmp/vdb <command>`. This Makefile just builds/checks the CLI.
 
-.PHONY: build vet fmt vm-build test integration web-dev web-build release release-linux wsl-zfs wsl-distro
+.PHONY: build vet fmt vm-build test integration web-dev web-build release release-linux wsl-zfs wsl-distro feature-doc
 
 VERSION ?= 0.1.0
 LDFLAGS := -s -w -X github.com/vectoradb/vectoradb/internal/version.Version=$(VERSION)
@@ -66,3 +66,18 @@ wsl-zfs:          ## Build the OpenZFS modules + userland for the stock WSL2 ker
 
 wsl-distro:       ## Build the prebuilt WSL2 distro image (Linux builder/CI with Docker)
 	bash deploy/wsl-distro/build.sh
+
+# The living feature document: edit docs/VDB_Feature_Implemented.html with every
+# change, then re-render the PDF. Uses headless Chrome/Chromium; set CHROME to a
+# browser binary if it isn't found automatically.
+feature-doc:      ## Render docs/VDB_Feature_Implemented.pdf from its HTML source
+	@chrome="$${CHROME:-}"; \
+	for c in "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" google-chrome chromium chromium-browser; do \
+		[ -n "$$chrome" ] && break; \
+		if [ -x "$$c" ] || command -v "$$c" >/dev/null 2>&1; then chrome="$$c"; fi; \
+	done; \
+	[ -n "$$chrome" ] || { echo "Chrome/Chromium not found — set CHROME=/path/to/chrome"; exit 1; }; \
+	url="file://$$(printf '%s' "$(CURDIR)" | sed 's/ /%20/g')/docs/VDB_Feature_Implemented.html"; \
+	"$$chrome" --headless --disable-gpu --no-pdf-header-footer --print-to-pdf-no-header \
+		--print-to-pdf="$(CURDIR)/docs/VDB_Feature_Implemented.pdf" "$$url" 2>/dev/null && \
+	echo "wrote docs/VDB_Feature_Implemented.pdf"
