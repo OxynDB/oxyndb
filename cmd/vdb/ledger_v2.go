@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/vectoradb/vectoradb/internal/branch"
@@ -15,6 +16,8 @@ import (
 //	vdb ledger checkpoint [branch]   anchor new entries outside the database
 //	vdb ledger integrity [branch]    check the ledger against its anchors
 //	vdb ledger export [branch]       every entry as JSON lines (--format jsonl)
+//	vdb ledger entries [branch]      newest entries with their ids (--limit N)
+//	vdb ledger branch-before <id>    a new branch of main as it was just before entry <id>
 //
 // It returns false for anything else, leaving the existing subcommands untouched.
 func ledgerV2Cmd(args []string) bool {
@@ -48,8 +51,46 @@ func ledgerV2Cmd(args []string) bool {
 			must(fmt.Errorf("unsupported export format %q (supported: jsonl)", f))
 		}
 		must(branch.ExportLedger(name, os.Stdout))
+	case "entries":
+		limit := 50
+		if v := optValue(args, "--limit"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				limit = n
+			}
+		}
+		if name = firstPositional(args[1:], "--limit"); name == "" {
+			name = "main"
+		}
+		entries, err := branch.LedgerEntries(name, limit)
+		must(err)
+		fmt.Println(branch.FormatLedgerEntries(entries))
+	case "branch-before":
+		branchBeforeCmd(args[1:])
 	default:
 		return false
 	}
 	return true
+}
+
+// branchBeforeCmd: vdb ledger branch-before <entry-id> [--branch main] [--as name]
+func branchBeforeCmd(args []string) {
+	id := firstPositional(args, "--branch", "--as")
+	entryID, err := strconv.ParseInt(id, 10, 64)
+	if id == "" || err != nil || entryID <= 0 {
+		fmt.Println("usage: vdb ledger branch-before <entry-id> [--branch main] [--as <new-branch>]")
+		os.Exit(2)
+	}
+	src := optValue(args, "--branch")
+	if src == "" {
+		src = "main"
+	}
+	fmt.Printf("Branching %s from just before ledger entry %d (base backup + WAL replay — this can take a few minutes)…\n", src, entryID)
+	res, err := branch.BranchBeforeEntry(src, entryID, optValue(args, "--as"), func(format string, a ...any) {
+		fmt.Printf("  "+format+"\n", a...)
+	})
+	must(err)
+	fmt.Printf("branch %q is ready (%ds): %s as it was just before entry %d\n", res.Branch, res.Seconds, res.Source, res.EntryID)
+	fmt.Printf("  excluded   %s %s\n", res.CommandTag, res.Object)
+	fmt.Printf("  target     %s %s (base backup %s)\n", res.TargetKind, res.Target, res.BaseBackup)
+	fmt.Printf("  connect    postgresql://vectoradb:<api-key>@localhost:6432/%s?sslmode=require\n", res.Branch)
 }

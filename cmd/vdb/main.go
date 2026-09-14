@@ -74,6 +74,8 @@ Schema ledger (RECORD layer):
   ledger checkpoint [branch]   Anchor new ledger entries outside the database (Merkle checkpoint)
   ledger integrity [branch]    Check the ledger against its anchors (detects rewritten history)
   ledger export [branch]       Write every ledger entry as JSON lines (for vdb-verify / audits)
+  ledger entries [branch]      Newest ledger entries with their ids (--limit N)
+  ledger branch-before <id>    New branch of main as it was just before ledger entry <id> (--as name)
   ledger revert --to <ts>      Time-travel revert of a branch's schema+data to a moment
 
 Migration:

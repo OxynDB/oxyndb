@@ -139,10 +139,11 @@ assert_eq "override use is recorded" \
   "$(pg vec-main "SELECT e.override_used::text FROM vdb.ledger_ext e JOIN vdb.schema_ledger s ON s.id=e.ledger_id WHERE s.command_tag='DROP TABLE' AND s.object_identity='public.v2cap' ORDER BY s.id DESC LIMIT 1")" "true"
 # Fail-safe: a capture that errors must never block the user's DDL.
 pg vec-main "ALTER TABLE vdb.ledger_ext ADD CONSTRAINT v2_test_fail CHECK (false) NOT VALID" >/dev/null
+SAFEMARK="$(pg vec-main "SELECT coalesce(max(id), 0) FROM vdb.schema_ledger")"   # count only this run's rows
 gw "$KEY" main "CREATE TABLE v2safe(x int)" >/dev/null
 assert_eq "a failing capture does not block DDL" "$(pg vec-main "SELECT to_regclass('public.v2safe') IS NOT NULL")" "t"
 assert_eq "the base ledger still records that DDL" \
-  "$(pg vec-main "SELECT count(*) FROM vdb.schema_ledger WHERE command_tag='CREATE TABLE' AND object_identity='public.v2safe'")" "1"
+  "$(pg vec-main "SELECT count(*) FROM vdb.schema_ledger WHERE command_tag='CREATE TABLE' AND object_identity='public.v2safe' AND id > $SAFEMARK")" "1"
 pg vec-main "ALTER TABLE vdb.ledger_ext DROP CONSTRAINT v2_test_fail" >/dev/null
 # Kill switch: vdb.v2=off stops capture for new sessions.
 pg vec-main "ALTER DATABASE vectoradb SET vdb.v2 = 'off'" >/dev/null
@@ -240,6 +241,86 @@ assert_eq "the scheduler anchors new entries on its own" \
 pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2sched; DROP TABLE IF EXISTS v2cp" >/dev/null
 $S stop >/dev/null 2>&1; sleep 1
 $S start >/dev/null 2>&1; sleep 5
+
+echo "### 4. branch from just before a ledger entry"
+# Three full restores (CLI by xid, MCP by time, REST) — expect a few minutes.
+for b in v2bb v2bb-rest v2bb-time v2bb-x; do $S branch delete "$b" >/dev/null 2>&1; done
+# main's integrity result before branch-before runs. Not necessarily INTACT: the
+# existing suite's resets delete main's ledger rows, which earlier anchors catch.
+main_integrity() { $S ledger integrity main 2>&1 | grep '✗' | sort; }   # its problems, if any
+MAIN_INTEGRITY_BEFORE="$(main_integrity)"
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2bb_keep; DROP TABLE IF EXISTS v2bb_old; DROP TABLE IF EXISTS v2bb_target; DROP TABLE IF EXISTS v2bb_after" >/dev/null
+gw "$KEY" main "CREATE TABLE v2bb_keep(x int)" >/dev/null
+gw "$KEY" main "INSERT INTO v2bb_keep SELECT generate_series(1,5)" >/dev/null
+$S backup create >/dev/null 2>&1
+gw "$KEY" main "INSERT INTO v2bb_keep SELECT generate_series(6,7)" >/dev/null   # after the backup, before the changes
+sleep 1
+pg vec-main "SET vdb.v2 = 'off'; CREATE TABLE v2bb_old(x int)" >/dev/null       # an entry without capture (time fallback)
+OLDID="$(pg vec-main "SELECT max(id) FROM vdb.schema_ledger WHERE object_identity = 'public.v2bb_old'")"
+sleep 1
+gw "$KEY" main "CREATE TABLE v2bb_target(x int)" >/dev/null
+TID="$(pg vec-main "SELECT max(id) FROM vdb.schema_ledger WHERE object_identity = 'public.v2bb_target'")"
+gw "$KEY" main "INSERT INTO v2bb_keep VALUES (8)" >/dev/null
+gw "$KEY" main "CREATE TABLE v2bb_after(x int)" >/dev/null
+assert_eq "the target entry has a captured transaction id" \
+  "$(pg vec-main "SELECT (xid IS NOT NULL)::text FROM vdb.ledger_ext WHERE ledger_id = $TID")" "true"
+assert_eq "the fallback entry has none" \
+  "$(pg vec-main "SELECT count(*) FROM vdb.ledger_ext WHERE ledger_id = $OLDID")" "0"
+assert_eq "vdb ledger entries lists the entry id" "$($S ledger entries --limit 10 | awk '{print $1}' | grep -cx "$TID")" "1"
+assert_eq "REST ledger entries lists it" \
+  "$(curl -sk -H "$AUTH" "$API/api/branches/main/ledger/entries?limit=10" | python3 -c 'import sys,json; print(sum(1 for e in json.load(sys.stdin) if e["id"] == int(sys.argv[1])))' "$TID")" "1"
+assert_eq "MCP ledger_entries lists it" "$(mcp_call ledger_entries '{"limit":10}' | awk '{print $1}' | grep -cx "$TID")" "1"
+
+OUT="$($S ledger branch-before "$TID" --as v2bb 2>&1)"
+assert_eq "CLI branch-before succeeds" "$(echo "$OUT" | grep -c 'is ready')" "1"
+assert_eq "it recovered to the entry's transaction id" "$(echo "$OUT" | grep -c 'target     xid')" "1"
+assert_eq "the new branch is running" "$(sudo docker inspect -f '{{.State.Status}}' vec-v2bb 2>/dev/null)" "running"
+assert_eq "rows written before the change are there (including after the backup)" "$(pg vec-v2bb 'SELECT count(*) FROM v2bb_keep')" "7"
+assert_eq "an earlier change is there" "$(pg vec-v2bb "SELECT count(*) FROM pg_tables WHERE tablename = 'v2bb_old'")" "1"
+assert_eq "the change itself is not" "$(pg vec-v2bb "SELECT count(*) FROM pg_tables WHERE tablename = 'v2bb_target'")" "0"
+assert_eq "later changes are not" "$(pg vec-v2bb "SELECT count(*) FROM pg_tables WHERE tablename = 'v2bb_after'")" "0"
+assert_eq "its ledger stops before the entry" "$(pg vec-v2bb "SELECT count(*) FROM vdb.schema_ledger WHERE id >= $TID")" "0"
+assert_eq "no recovery settings are left behind" \
+  "$(pg vec-v2bb "SELECT count(*) FROM pg_file_settings WHERE name LIKE 'recovery_target%' OR name = 'restore_command'")" "0"
+assert_eq "it is reachable through the gateway" "$(gw "$KEY" v2bb 'SELECT count(*) FROM v2bb_keep')" "7"
+assert_eq "the guardrail is active on it" "$(gw "$KEY" v2bb 'DROP TABLE v2bb_keep' | grep -c 'guardrail')" "1"
+assert_eq "main is untouched" \
+  "$(pg vec-main "SELECT count(*) FROM pg_tables WHERE tablename IN ('v2bb_target','v2bb_after')")|$(pg vec-main 'SELECT count(*) FROM v2bb_keep')" "2|8"
+assert_eq "main's ledger integrity result is unchanged" "$(main_integrity)" "$MAIN_INTEGRITY_BEFORE"
+
+assert_eq "an existing branch name is refused" \
+  "$($S ledger branch-before "$TID" --as v2bb 2>&1 | grep -c 'already exists')" "1"
+gw "$KEY" main "DROP TABLE v2bb_keep" >/dev/null   # blocked by the guardrail: a BLOCKED entry
+BID="$(pg vec-main "SELECT max(id) FROM vdb.schema_ledger WHERE status = 'BLOCKED'")"
+assert_eq "a BLOCKED entry is refused" "$($S ledger branch-before "$BID" --as v2bb-x 2>&1 | grep -c 'BLOCKED')" "1"
+assert_eq "a refused request leaves nothing behind" "$(sudo docker inspect vec-v2bb-x >/dev/null 2>&1 || echo none)" "none"
+assert_eq "an unknown entry is refused" "$($S ledger branch-before 999999999 --as v2bb-x 2>&1 | grep -c 'not found')" "1"
+assert_eq "a source other than main is refused" "$($S ledger branch-before "$TID" --branch v2bb --as v2bb-x 2>&1 | grep -c 'only main')" "1"
+assert_eq "a bad entry id is a usage error" "$($S ledger branch-before abc >/dev/null 2>&1; echo $?)" "2"
+assert_eq "REST: unknown entry is 404" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' -X POST -H "$AUTH" "$API/api/branches/main/ledger/999999999/branch")" "404"
+assert_eq "REST: BLOCKED entry is 400" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' -X POST -H "$AUTH" "$API/api/branches/main/ledger/$BID/branch")" "400"
+assert_eq "REST: existing name is 409" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' -X POST -H "$AUTH" -d '{"name":"v2bb"}' "$API/api/branches/main/ledger/$TID/branch")" "409"
+assert_eq "MCP lists branch_before_change" \
+  "$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | "$S" mcp 2>/dev/null | grep -c 'branch_before_change')" "1"
+assert_eq "MCP: BLOCKED entry is refused" "$(mcp_call branch_before_change "{\"entry_id\":$BID,\"name\":\"v2bb-x\"}" | grep -c 'BLOCKED')" "1"
+
+assert_eq "REST branch-before creates the branch" \
+  "$(curl -sk --max-time 1200 -X POST -H "$AUTH" -d '{"name":"v2bb-rest"}' "$API/api/branches/main/ledger/$TID/branch" | jget branch)" "v2bb-rest"
+assert_eq "REST branch holds main before the change" \
+  "$(pg vec-v2bb-rest "SELECT count(*) FROM pg_tables WHERE tablename = 'v2bb_target'")|$(pg vec-v2bb-rest 'SELECT count(*) FROM v2bb_keep')" "0|7"
+
+assert_eq "MCP branch-before by time (entry without capture) succeeds" \
+  "$(mcp_call branch_before_change "{\"entry_id\":$OLDID,\"name\":\"v2bb-time\"}" | grep -c 'recovered to time')" "1"
+assert_eq "time fallback excludes the change and keeps earlier rows" \
+  "$(pg vec-v2bb-time "SELECT count(*) FROM pg_tables WHERE tablename = 'v2bb_old'")|$(pg vec-v2bb-time 'SELECT count(*) FROM v2bb_keep')" "0|7"
+
+$S branch delete v2bb >/dev/null 2>&1
+assert_eq "the branch deletes like any other" "$(sudo docker inspect vec-v2bb >/dev/null 2>&1 || echo gone)" "gone"
+for b in v2bb-rest v2bb-time v2bb-x; do $S branch delete "$b" >/dev/null 2>&1; done
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2bb_keep; DROP TABLE IF EXISTS v2bb_old; DROP TABLE IF EXISTS v2bb_target; DROP TABLE IF EXISTS v2bb_after" >/dev/null
 
 echo
 echo "==== ${PASS} passed, ${FAIL} failed ===="

@@ -215,6 +215,77 @@ paths:
           content: { application/x-ndjson: { schema: { type: string } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /api/branches/{name}/ledger/entries:
+    get:
+      tags: [ledger]
+      summary: Newest ledger entries with their ids, newest first.
+      description: The ids are what POST /api/branches/{name}/ledger/{id}/branch takes.
+      parameters:
+        - { $ref: "#/components/parameters/BranchName" }
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 1000 } }
+      responses:
+        "200":
+          description: Entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: integer }
+                    at: { type: string, format: date-time }
+                    actor: { type: string }
+                    command_tag: { type: string }
+                    object_identity: { type: string }
+                    status: { type: string }
+                    risk: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/branches/{name}/ledger/{id}/branch:
+    post:
+      tags: [ledger]
+      summary: Create a branch holding main as it was just before a ledger entry.
+      description: >-
+        Restores the newest base backup that finished before the entry and replays archived WAL up to,
+        but not including, the entry's transaction (or its time, for entries recorded before Schema
+        Ledger 2.0 capture). Synchronous; typically takes a few minutes. Only main can be the source.
+      parameters:
+        - { $ref: "#/components/parameters/BranchName" }
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 }, description: Ledger entry id }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, description: "New branch name (default <branch>-before-<id>)" }
+      responses:
+        "201":
+          description: The branch is ready.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  branch: { type: string }
+                  source: { type: string }
+                  entry_id: { type: integer }
+                  command_tag: { type: string }
+                  object_identity: { type: string }
+                  statement: { type: string }
+                  target_kind: { type: string, enum: [xid, time] }
+                  target: { type: string }
+                  base_backup: { type: string }
+                  last_ledger_id: { type: integer }
+                  seconds: { type: integer }
+        "400": { description: Invalid entry id, name, source branch, or a BLOCKED entry. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: No such ledger entry. }
+        "409": { description: A branch with that name already exists. }
+        "422": { description: No base backup finished before the entry. }
+
   /api/import:
     post:
       tags: [import]
