@@ -48,6 +48,25 @@ INSERT INTO vdb.policy(op, action) VALUES
   ('DROP SCHEMA', 'block')
 ON CONFLICT (op) DO NOTHING;
 
+-- Who may override a blocking policy with SET vdb.allow_destructive=on: superusers
+-- (the engine's own imports and pipelines connect as one) and members of
+-- vdb_admin. Any other session stays blocked even with the override set. Membership
+-- is granted per user with `vdb admin grant <email>`.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vdb_admin') THEN
+    CREATE ROLE vdb_admin NOLOGIN;
+  END IF;
+END $$;
+
+-- session_user, not current_user: the guard runs SECURITY DEFINER, and the login
+-- identity is the one a client cannot change.
+CREATE OR REPLACE FUNCTION vdb._may_override() RETURNS boolean
+LANGUAGE sql STABLE AS $$
+  SELECT coalesce((SELECT rolsuper FROM pg_roles WHERE rolname = session_user), false)
+      OR pg_has_role(session_user, 'vdb_admin', 'MEMBER');
+$$;
+
 -- Attribution context. The actor is the login identity (session_user) when the
 -- client logged in as a per-user role — a value a client CANNOT change (SET ROLE
 -- leaves session_user untouched), so gateway attribution is non-forgeable. The
@@ -90,8 +109,8 @@ BEGIN
     RETURN; -- allowed (or flagged) — recorded in the end/drop triggers
   END IF;
   allow := coalesce(nullif(current_setting('vdb.allow_destructive', true), ''), 'off');
-  IF allow IN ('on','true','1') THEN
-    RETURN; -- approved override
+  IF allow IN ('on','true','1') AND vdb._may_override() THEN
+    RETURN; -- approved override (a superuser or a vdb_admin member)
   END IF;
   SELECT * INTO c FROM vdb._ctx();
   -- Record the blocked attempt durably via dblink (autonomous — survives the rollback).
@@ -102,7 +121,8 @@ BEGIN
             VALUES (%L,%L,%L,%L,%L,%L,%L,'BLOCKED','policy')$f$,
       c.actor, c.actor_kind, c.tool, c.session, c.branch, TG_TAG, current_query()));
   RAISE EXCEPTION 'VectoraDB guardrail: % is blocked by policy (set vdb.allow_destructive=on to override)', TG_TAG
-    USING ERRCODE = 'insufficient_privilege';
+    USING ERRCODE = 'insufficient_privilege',
+          HINT = 'Only superusers and members of vdb_admin may override. Grant it with: vdb admin grant <email>';
 END;
 $$;
 

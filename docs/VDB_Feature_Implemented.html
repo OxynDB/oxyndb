@@ -103,7 +103,7 @@
   changes in the same commit.</p>
   <div class="meta">
     <b>Product:</b> VectoraDB — serverless PostgreSQL with copy-on-write branching and a Schema Ledger<br>
-    <b>Last updated:</b> 14 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>8b1856f</code> (release line v0.7.x)<br>
+    <b>Last updated:</b> 14 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>a5a52b6</code> + Schema Ledger 2.0 Phase 1 (<code>feat/ledger2-phase1-security</code>)<br>
     <b>License:</b> AGPL-3.0 core · Apache-2.0 client SDKs<br>
     <b>Source of truth:</b> <code>docs/VDB_Feature_Implemented.html</code> → <code>make feature-doc</code> → this PDF<br>
     <b>Supersedes:</b> <code>docs/vectoradb-feature-reference</code> (25 Aug 2026, no longer maintained)<br>
@@ -117,6 +117,7 @@
   <p class="sub">Newest first. Every change to VectoraDB adds a row here.</p>
   <table>
     <tr><th style="width:17%">Date</th><th style="width:22%">Feature(s)</th><th>What changed</th><th style="width:14%">Commit / PR</th></tr>
+    <tr><td>14 Sep 2026</td><td>D3, H3, H4, K5, K6, B1; new H8</td><td><b>Schema Ledger 2.0 Phase 1 — three security fixes.</b> PITR restore uses the per-install MinIO credentials. The destructive-DDL override is honoured only for superusers and <code>vdb_admin</code> members (new <code>vdb admin grant|revoke|list</code> and <code>vdb ledger upgrade</code>; the first local user is granted automatically). Agent branches log in as their own non-superuser <code>agent-&lt;id&gt;</code> role and MCP <code>run_sql</code> runs as <code>vdbclient</code> (compatibility switches <code>VECTORADB_AGENT_SUPERUSER</code>, <code>VECTORADB_MCP_SUPERUSER</code>). New <code>scripts/integration_ledger_v2.sh</code> (<code>make integration-v2</code>) pins unchanged behaviour and tests the fixes.</td><td><code>feat/ledger2-phase1-security</code></td></tr>
     <tr><td>14 Sep 2026</td><td>Whole document</td><td>Document created. Inventory of every feature implemented as of <code>8b1856f</code>: install &amp; setup, CLI, branching &amp; storage, durability, security, gateway, auth, Schema Ledger, import, pipelines, APIs/SDKs/MCP, web console, CI &amp; releases. Known issues and the test baseline recorded.</td><td>branch <code>docs/feature-implemented</code></td></tr>
   </table>
 
@@ -125,7 +126,8 @@
   <table>
     <tr><th style="width:26%">Suite</th><th style="width:20%">Result</th><th>Details</th></tr>
     <tr><td>Go unit tests (<code>go test ./...</code>, host)</td><td><span class="st ok">All pass</span></td><td>14 Sep 2026, go1.26.6 darwin/arm64, commit <code>8b1856f</code>. Packages with tests: cmd/vdb, auth, branch, controlplane, daemon, host, proxy. No test files: agentapi, ledger, mcp, secrets, tlsutil, version, web.</td></tr>
-    <tr><td>Integration (<code>make integration</code>, Lima VM)</td><td><span class="st part">Pending run</span></td><td>§1 and §5 call <code>http://localhost:8080</code> / <code>:8088</code> while both servers serve TLS since <code>0bd52f3</code>; those assertions are expected to fail until the test-only fix (https + <code>-k</code>) lands. Result to be recorded here.</td></tr>
+    <tr><td>Integration (<code>make integration</code>, Lima VM)</td><td><span class="st part">Pending run</span></td><td>The https fix for §1 and §5 landed in <code>13734a7</code>. Result to be recorded here.</td></tr>
+    <tr><td>Schema Ledger 2.0 (<code>make integration-v2</code>, Lima VM)</td><td><span class="st part">Pending run</span></td><td>Behaviour-unchanged checks plus Phase 1 fixes. Result to be recorded here.</td></tr>
     <tr><td>Windows (Pester, windows-ci.yml)</td><td><span class="st ok">In CI</span></td><td>Runs on every push/PR to main.</td></tr>
   </table>
   <div class="foot">VDB_Feature Implemented · change log &amp; baseline</div>
@@ -162,7 +164,7 @@
     <div class="g"><div class="gt">D · Durability</div><ul>
       <li><span class="n">D1</span>WAL archiving to object storage<span class="st ok">Working</span></li>
       <li><span class="n">D2</span>Base backups<span class="st ok">Working</span></li>
-      <li><span class="n">D3</span>Point-in-time restore<span class="st bad">Known issue</span></li>
+      <li><span class="n">D3</span>Point-in-time restore<span class="st part">Partial</span></li>
       <li><span class="n">D4</span>HA standby &amp; failover<span class="st part">Partial</span></li>
     </ul></div>
     <div class="g"><div class="gt">E · Security foundations</div><ul>
@@ -190,10 +192,11 @@
       <li><span class="n">H1</span>DDL recording<span class="st ok">Working</span></li>
       <li><span class="n">H2</span>Hash chain, append-only, verify<span class="st part">Partial</span></li>
       <li><span class="n">H3</span>Attribution<span class="st part">Partial</span></li>
-      <li><span class="n">H4</span>Destructive-DDL guardrail<span class="st bad">Known issue</span></li>
+      <li><span class="n">H4</span>Destructive-DDL guardrail<span class="st part">Partial</span></li>
       <li><span class="n">H5</span>Risk flags<span class="st part">Partial</span></li>
       <li><span class="n">H6</span>Ledger access (CLI/REST/MCP/UI/SDK)<span class="st ok">Working</span></li>
       <li><span class="n">H7</span><code>vdb ledger revert --to</code><span class="st bad">Known issue</span></li>
+      <li><span class="n">H8</span>Override permission &amp; ledger upgrade<span class="st ok">Working</span></li>
     </ul></div>
     <div class="g"><div class="gt">I · Import &amp; migration</div><ul>
       <li><span class="n">I1</span>From Postgres<span class="st ok">Working</span></li>
@@ -328,10 +331,10 @@
         <tr><td><code>vdb branch create|list|delete|reset [--from p]|suspend|resume</code></td><td>Branches (C2)</td></tr>
         <tr><td><code>vdb backup create|list</code> · <code>vdb restore --to &lt;ts|latest&gt;</code></td><td>Durability (D2, D3)</td></tr>
         <tr><td><code>vdb ha enable|status|failover|disable</code></td><td>HA (D4)</td></tr>
-        <tr><td><code>vdb ledger [branch] [--limit N]</code> · <code>ledger verify</code> · <code>ledger revert --to</code></td><td>Schema Ledger (H6, H7)</td></tr>
+        <tr><td><code>vdb ledger [branch] [--limit N]</code> · <code>ledger verify</code> · <code>ledger upgrade [branch|--all]</code> · <code>ledger revert --to</code></td><td>Schema Ledger (H6, H7, H8)</td></tr>
         <tr><td><code>vdb import --from &lt;src&gt; [--as n] [--continuous]</code> · <code>vdb import-cutover &lt;n&gt;</code></td><td>Import (I*)</td></tr>
         <tr><td><code>vdb pipeline run spec.json [--as n]</code></td><td>Pipelines (J1)</td></tr>
-        <tr><td><code>vdb user create</code> · <code>vdb apikey create|list|revoke</code></td><td>Accounts (G2, G3)</td></tr>
+        <tr><td><code>vdb user create</code> · <code>vdb apikey create|list|revoke</code> · <code>vdb admin grant|revoke|list [--branch]</code></td><td>Accounts (G2, G3, H8)</td></tr>
         <tr><td><code>vdb gateway [--addr :6432] [--idle 2m]</code> · <code>vdb controlplane [--addr :8080]</code> · <code>vdb serve [--addr :8088]</code> · <code>vdb mcp</code></td><td>Run a service in the foreground</td></tr>
       </table></div></div>
     <div class="row"><div class="k">How to test</div><div class="v">Unit: <code>cmd/vdb/main_test.go</code> — TestAddrFlag, TestDurFlag, TestRestoreArg. Behaviour via <code>scripts/integration_test.sh</code>.</div></div>
@@ -450,13 +453,13 @@
     <div class="row"><div class="k">Added in</div><div class="v"><code>a7580f6</code>.</div></div>
   </div>
 
-  <div class="card"><div class="hd"><span class="id">D3</span><h3>Point-in-time restore</h3><span class="st bad">Known issue</span></div>
+  <div class="card"><div class="hd"><span class="id">D3</span><h3>Point-in-time restore</h3><span class="st part">Partial</span></div>
     <div class="row"><div class="k">What it does</div><div class="v">Brings up a separate copy of main at a past timestamp (or latest) on port 5433.</div></div>
     <div class="row"><div class="k">How it works</div><div class="v"><code>Restore</code> runs the image with <code>restore-entrypoint.sh</code>: <code>wal-g backup-fetch LATEST</code>, <code>recovery_target_time</code>, promote; <code>waitRecovered</code> polls up to 80s.</div></div>
     <div class="row"><div class="k">How to use</div><div class="v"><code>vdb restore --to '2026-09-14 10:00:00+00'</code> or <code>--to latest</code></div></div>
-    <div class="row"><div class="k">How to test</div><div class="v">Integration §3 ("PITR restores 3 rows").</div></div>
-    <div class="row"><div class="k">Status &amp; limits</div><div class="v"><b>Broken on fresh installs:</b> <code>Restore</code> passes hardcoded <code>minioadmin</code> credentials (<code>branch.go</code> ~557) while MinIO runs on generated ones, so the backup fetch fails. Success message still shows <code>PGPASSWORD=vectoradb</code>. Always fetches the LATEST base backup, so a time before that backup can't be reached. Fix scheduled (Schema Ledger 2.0, Phase 1 H1).</div></div>
-    <div class="row"><div class="k">Added in</div><div class="v"><code>a7580f6</code>; broke with <code>797bc14</code> (PR #11).</div></div>
+    <div class="row"><div class="k">How to test</div><div class="v">Integration §3 ("PITR restores 3 rows"); integration-v2 §1a (no <code>minioadmin</code> in the restore container, no hardcoded password printed).</div></div>
+    <div class="row"><div class="k">Status &amp; limits</div><div class="v">Uses the per-install MinIO credentials (fixed in Schema Ledger 2.0 Phase 1 — a hardcoded <code>minioadmin</code> pair used to make restore fail on fresh installs), and the printed hint no longer shows a password. Still always fetches the LATEST base backup, so a time before that backup can't be reached.</div></div>
+    <div class="row"><div class="k">Added in</div><div class="v"><code>a7580f6</code>; broke with <code>797bc14</code> (PR #11); fixed in <code>feat/ledger2-phase1-security</code>.</div></div>
   </div>
 
   <div class="card"><div class="hd"><span class="id">D4</span><h3>HA standby &amp; failover</h3><span class="st part">Partial</span></div>
@@ -651,16 +654,16 @@
     <div class="row"><div class="k">How it works</div><div class="v"><code>vdb._ctx</code>: actor = <code>session_user</code> (per-user role, F4) unless the login is <code>vectoradb</code>/<code>vdbclient</code>, then the <code>vdb.actor</code> setting; kind = <code>vdb.actor_kind</code>; tool = <code>application_name</code>; session = <code>vdb.session</code> or backend pid. Console sets actor to the signed-in email; agent branches get <code>vdb.actor='agent-&lt;id&gt;'</code> database defaults.</div></div>
     <div class="row"><div class="k">How to use</div><div class="v">Automatic.</div></div>
     <div class="row"><div class="k">How to test</div><div class="v">Integration §8 (actor_kind = human).</div></div>
-    <div class="row"><div class="k">Status &amp; limits</div><div class="v">Non-forgeable for gateway users. Agent API returns a superuser DSN and MCP <code>run_sql</code> runs as superuser (actor NULL on main) — scheduled fix Phase 1 H3. Tool/kind/session are client-settable.</div></div>
+    <div class="row"><div class="k">Status &amp; limits</div><div class="v">Non-forgeable for gateway users and, since Phase 1, for agents: each agent branch logs in as its own <code>agent-&lt;id&gt;</code> role. MCP <code>run_sql</code> is attributed to <code>mcp</code> as an agent on non-agent branches. Tool, kind and session remain client-settable.</div></div>
     <div class="row"><div class="k">Added in</div><div class="v"><code>e42e792</code>; non-forgeable <code>96c8c31</code> (PR #16).</div></div>
   </div>
 
-  <div class="card"><div class="hd"><span class="id">H4</span><h3>Destructive-DDL guardrail</h3><span class="st bad">Known issue</span></div>
+  <div class="card"><div class="hd"><span class="id">H4</span><h3>Destructive-DDL guardrail</h3><span class="st part">Partial</span></div>
     <div class="row"><div class="k">What it does</div><div class="v">Refuses <code>DROP TABLE</code> and <code>DROP SCHEMA</code> before they run, and still records the attempt.</div></div>
-    <div class="row"><div class="k">How it works</div><div class="v"><code>ddl_command_start</code> → <code>guard_ddl_start</code> looks up <code>vdb.policy</code> (seeded DROP TABLE/SCHEMA → block) and raises <code>insufficient_privilege</code>; a <code>dblink</code> insert records status <code>BLOCKED</code> in its own transaction so it survives the rollback. Imports/pipelines disable the trigger temporarily (I9).</div></div>
+    <div class="row"><div class="k">How it works</div><div class="v"><code>ddl_command_start</code> → <code>guard_ddl_start</code> looks up <code>vdb.policy</code> (seeded DROP TABLE/SCHEMA → block), honours <code>vdb.allow_destructive</code> only when <code>vdb._may_override()</code> is true (H8), and raises <code>insufficient_privilege</code> with a HINT; a <code>dblink</code> insert records status <code>BLOCKED</code> in its own transaction so it survives the rollback. Imports/pipelines disable the trigger temporarily (I9).</div></div>
     <div class="row"><div class="k">How to use</div><div class="v">Automatic: <code>DROP TABLE t;</code> → "VectoraDB guardrail: DROP TABLE is blocked by policy".</div></div>
     <div class="row"><div class="k">How to test</div><div class="v">Integration §8 (DROP blocked; BLOCKED row recorded).</div></div>
-    <div class="row"><div class="k">Status &amp; limits</div><div class="v"><b>Override is ungated:</b> any client can <code>SET vdb.allow_destructive=on</code>, and using it isn't recorded. Only <code>block</code> actions work (<code>flag</code>/<code>allow</code> do nothing); no CLI/API/UI to manage policy. Fix scheduled (Phase 1 H2).</div></div>
+    <div class="row"><div class="k">Status &amp; limits</div><div class="v">Since Phase 1 the override is honoured only for superusers and members of <code>vdb_admin</code> (H8); anyone else stays blocked. Using the override isn't recorded yet (planned: Phase 2). Only <code>block</code> actions work (<code>flag</code>/<code>allow</code> do nothing); no CLI/API/UI to manage policy.</div></div>
     <div class="row"><div class="k">Added in</div><div class="v"><code>e42e792</code>.</div></div>
   </div>
 
@@ -689,6 +692,14 @@
     <div class="row"><div class="k">How to test</div><div class="v">Same as D3.</div></div>
     <div class="row"><div class="k">Status &amp; limits</div><div class="v">Inherits the D3 credential bug; name overstates behaviour. Kept unchanged; Schema Ledger 2.0 Phase 4 adds a real "branch from before this entry".</div></div>
     <div class="row"><div class="k">Added in</div><div class="v"><code>e42e792</code>.</div></div>
+  </div>
+  <div class="card"><div class="hd"><span class="id">H8</span><h3>Override permission (vdb_admin) &amp; ledger upgrade</h3><span class="st ok">Working</span></div>
+    <div class="row"><div class="k">What it does</div><div class="v">Decides who may override the destructive-DDL guardrail, and applies the current ledger definition to branches that already exist.</div></div>
+    <div class="row"><div class="k">How it works</div><div class="v"><code>ledger.sql</code> creates role <code>vdb_admin</code> and <code>vdb._may_override()</code> — true for superusers or members of <code>vdb_admin</code>, checked on <code>session_user</code> (the login identity a client can't change). <code>vdb admin grant</code> ensures the user's per-user role and runs <code>GRANT vdb_admin</code> (<code>internal/branch/security.go</code>, <code>cmd/vdb/admin.go</code>). Roles live in each branch's Postgres, so without <code>--branch</code> a change applies to main and every running branch; new branches inherit main's. The first local user created by <code>vdb start</code> is granted automatically. <code>vdb ledger upgrade</code> re-runs the idempotent <code>ledger.sql</code>; main is also upgraded on every <code>vdb start</code>.</div></div>
+    <div class="row"><div class="k">How to use</div><div class="v"><code>vdb admin grant you@x.com</code> · <code>vdb admin list</code> · <code>vdb admin revoke you@x.com --branch qa</code> · <code>vdb ledger upgrade --all</code></div></div>
+    <div class="row"><div class="k">How to test</div><div class="v">integration-v2 §1b: non-admin override refused with a HINT, admin override works, revoke restores the block, superuser override (imports/pipelines) unaffected.</div></div>
+    <div class="row"><div class="k">Status &amp; limits</div><div class="v">Code complete and unit-tested; VM integration run pending. <b>Existing installs:</b> the owner runs <code>vdb admin grant &lt;email&gt;</code> once (only brand-new installs grant the first user automatically), and existing branches need <code>vdb ledger upgrade --all</code>. Suspended branches are skipped until running.</div></div>
+    <div class="row"><div class="k">Added in</div><div class="v">Schema Ledger 2.0 Phase 1 (<code>feat/ledger2-phase1-security</code>).</div></div>
   </div>
   <div class="foot">VDB_Feature Implemented · H. Schema Ledger</div>
 </section>
@@ -879,7 +890,7 @@
         <tr><td><code>GET|POST /api/keys</code>, <code>DELETE /api/keys/{id}</code></td><td>API keys</td></tr>
       </table></div></div>
     <div class="row"><div class="k">How to use</div><div class="v"><code>curl -k -H "Authorization: Bearer $KEY" https://localhost:8080/api/status</code></div></div>
-    <div class="row"><div class="k">How to test</div><div class="v">Unit: TestNameValidation. Integration §1 (uses plain http — test fix pending).</div></div>
+    <div class="row"><div class="k">How to test</div><div class="v">Unit: TestNameValidation. Integration §1; integration-v2 §0 (ledger/verify columns).</div></div>
     <div class="row"><div class="k">Status &amp; limits</div><div class="v">Working. Not versioned (<code>/api/</code>, not <code>/api/v1/</code>).</div></div>
     <div class="row"><div class="k">Added in</div><div class="v"><code>a7580f6</code>; TLS <code>0bd52f3</code>.</div></div>
   </div>
@@ -915,8 +926,8 @@
     <div class="row"><div class="k">What it does</div><div class="v">A disposable database per AI agent over HTTPS on <code>:8088</code>.</div></div>
     <div class="row"><div class="k">How it works</div><div class="v"><code>internal/agentapi</code>: <code>GET /healthz</code> (public), <code>GET /agents</code>, <code>POST /agents/{id}/branch</code> (creates <code>agent-&lt;id&gt;</code>, returns DSN), <code>DELETE /agents/{id}/branch</code>. Cap <code>VECTORADB_AGENT_MAX</code> (50); TTL reaping with <code>VECTORADB_AGENT_TTL</code>.</div></div>
     <div class="row"><div class="k">How to use</div><div class="v"><code>curl -k -H "Authorization: Bearer $KEY" -X POST https://localhost:8088/agents/alice/branch</code></div></div>
-    <div class="row"><div class="k">How to test</div><div class="v">Integration §5 (uses plain http — test fix pending).</div></div>
-    <div class="row"><div class="k">Status &amp; limits</div><div class="v">DSN uses the <b>superuser</b> <code>vectoradb</code> and the container IP, so it only works inside the VM and bypasses the gateway (fix scheduled: Phase 1 H3). Cap and TTL count only running containers.</div></div>
+    <div class="row"><div class="k">How to test</div><div class="v">Integration §5; integration-v2 §1c (own non-superuser role, can't disable triggers or override).</div></div>
+    <div class="row"><div class="k">Status &amp; limits</div><div class="v">Each agent logs in as its own non-superuser role <code>agent-&lt;id&gt;</code> with a random password returned once (listings omit it); <code>VECTORADB_AGENT_SUPERUSER=1</code> restores the old superuser DSN. The DSN still uses the container IP, so it only works inside the VM. Agent branches created before this change have no agent role (recreate them). Cap and TTL count only running containers.</div></div>
     <div class="row"><div class="k">Added in</div><div class="v"><code>a7580f6</code>; cap/TTL <code>e720c4e</code> (PR #12).</div></div>
   </div>
 
@@ -924,8 +935,8 @@
     <div class="row"><div class="k">What it does</div><div class="v">Lets agent frameworks manage agent branches, run SQL and read/verify the ledger via the Model Context Protocol.</div></div>
     <div class="row"><div class="k">How it works</div><div class="v"><code>internal/mcp</code>: JSON-RPC 2.0 over stdio (<code>initialize</code>, <code>tools/list</code>, <code>tools/call</code>). Tools: <code>create_branch</code>, <code>list_branches</code>, <code>delete_branch</code>, <code>run_sql</code>, <code>changes</code>, <code>verify_ledger</code>.</div></div>
     <div class="row"><div class="k">How to use</div><div class="v">Configure an MCP client to launch command <code>vdb</code> with args <code>["mcp"]</code>.</div></div>
-    <div class="row"><div class="k">How to test</div><div class="v">No tests. Manual: pipe <code>initialize</code>, <code>tools/list</code>, <code>tools/call run_sql</code> JSON lines into <code>vdb mcp</code>.</div></div>
-    <div class="row"><div class="k">Status &amp; limits</div><div class="v"><code>run_sql</code> runs as superuser with no actor (fix scheduled: Phase 1 H3). No auth (local privileges). No client config snippet in docs.</div></div>
+    <div class="row"><div class="k">How to test</div><div class="v">integration-v2 §1c (run_sql role, list_branches without passwords, compat switch). Manual: pipe <code>initialize</code>, <code>tools/list</code>, <code>tools/call run_sql</code> JSON lines into <code>vdb mcp</code>.</div></div>
+    <div class="row"><div class="k">Status &amp; limits</div><div class="v"><code>run_sql</code> runs as the non-superuser <code>vdbclient</code>, attributed to <code>mcp</code>; <code>VECTORADB_MCP_SUPERUSER=1</code> restores the superuser. <code>list_branches</code> no longer shows passwords. No auth (local privileges). No client config snippet in docs.</div></div>
     <div class="row"><div class="k">Added in</div><div class="v"><code>d62c676</code> / <code>ed5a379</code> (PR #14).</div></div>
   </div>
   <div class="foot">VDB_Feature Implemented · K. APIs, SDKs &amp; agents</div>
@@ -1006,7 +1017,7 @@
 
   <div class="card"><div class="hd"><span class="id">M1</span><h3>Makefile targets</h3><span class="st ok">Working</span></div>
     <div class="row"><div class="k">What it does</div><div class="v">One place to build, test and release.</div></div>
-    <div class="row"><div class="k">How it works</div><div class="v"><code>build</code>, <code>vet</code>, <code>fmt</code>, <code>test</code>, <code>vm-build</code> (Lima, embedui), <code>integration</code> (Lima), <code>web-build</code>, <code>web-dev</code> (deprecated), <code>release</code> (5 binaries + docker context), <code>release-linux</code>, <code>wsl-distro</code>, <code>wsl-zfs</code>, <code>feature-doc</code> (renders this PDF).</div></div>
+    <div class="row"><div class="k">How it works</div><div class="v"><code>build</code>, <code>vet</code>, <code>fmt</code>, <code>test</code>, <code>vm-build</code> (Lima, embedui), <code>integration</code> and <code>integration-v2</code> (Lima), <code>web-build</code>, <code>web-dev</code> (deprecated), <code>release</code> (5 binaries + docker context), <code>release-linux</code>, <code>wsl-distro</code>, <code>wsl-zfs</code>, <code>feature-doc</code> (renders this PDF).</div></div>
     <div class="row"><div class="k">How to use</div><div class="v"><code>make test</code> · <code>make integration</code> · <code>make release VERSION=x.y.z</code> · <code>make feature-doc</code></div></div>
     <div class="row"><div class="k">How to test</div><div class="v">CI runs build/vet/test/gofmt.</div></div>
     <div class="row"><div class="k">Status &amp; limits</div><div class="v">Working. <code>release</code> prints an outdated ZFS-bundle note.</div></div>
@@ -1069,6 +1080,7 @@
     <tr><td><code>cmd/vdb/main_test.go</code></td><td>TestAddrFlag, TestDurFlag, TestRestoreArg</td><td>B1</td></tr>
     <tr><td><code>internal/auth/auth_test.go</code></td><td>TestPasswordLogin, TestAPIKeys, TestVerifyKeyConcurrent, TestSessions</td><td>G1–G4</td></tr>
     <tr><td><code>internal/branch/branch_test.go</code></td><td>TestParsePublishedPort, TestDSN, TestAgentBranchName, TestContainerName</td><td>C2, C4, K5</td></tr>
+    <tr><td><code>internal/branch/security_test.go</code></td><td>TestAgentDSN, TestTruthyEnv, TestSuperuserSwitchesDefaultOff, TestRandomPassword</td><td>K5, K6</td></tr>
     <tr><td><code>internal/branch/pipeline_test.go</code></td><td>TestSQLIdent, TestRenderSQL, TestTestQuery, TestJSONColumn</td><td>I6, I13, J1, J2</td></tr>
     <tr><td><code>internal/controlplane/server_test.go</code></td><td>TestNameValidation</td><td>K1</td></tr>
     <tr><td><code>internal/daemon/daemon_test.go</code></td><td>TestStopTerminatesProcess</td><td>B2</td></tr>
@@ -1090,19 +1102,26 @@
     <tr><td>§9 ETL pipeline</td><td>exit 0; raw tables; staged values; failing test → exit 1 with data kept</td><td>I4, J1, J2</td></tr>
     <tr><td>§10 Schema fidelity</td><td>exact <code>userId</code> column; nested → jsonb; model query returns 1 row</td><td>I4, I6, I13</td></tr>
   </table>
-  <p class="sub">Not covered by any automated test: MCP server, agent API handlers, OAuth, REST ledger/import/pipeline handlers, SDKs, web UI, per-user roles, SCRAM, storage quotas, non-Mongo imports.</p>
+  <table>
+    <tr><th style="width:30%">Integration section (<code>scripts/integration_ledger_v2.sh</code>)</th><th>Assertions</th><th style="width:18%">Covers</th></tr>
+    <tr><td>§0 Behaviour unchanged</td><td>guardrail error text; REST ledger and verify columns; <code>row_hash</code> formula (SQL vs Python); CLI verify intact</td><td>H2, H4, H6, K1</td></tr>
+    <tr><td>§1a Restore credentials</td><td>restore returns 3 rows; no hardcoded password printed; no <code>minioadmin</code> in the restore container</td><td>D3</td></tr>
+    <tr><td>§1b Override permission</td><td>ledger upgrade; non-admin refused with HINT; admin allowed; revoke restores the block; superuser override still works</td><td>H4, H8, F4</td></tr>
+    <tr><td>§1c Least privilege</td><td>agent DSN uses its own non-superuser role; DB usable; attributed to the agent; can't disable triggers or override; MCP list hides passwords; MCP run_sql as <code>vdbclient</code>; compat switch</td><td>K5, K6, H3</td></tr>
+  </table>
+  <p class="sub">Not covered by any automated test: most MCP tools, OAuth, REST import/pipeline handlers, SDKs, web UI, SCRAM, storage quotas, non-Mongo imports.</p>
   <div class="foot">VDB_Feature Implemented · test matrix</div>
 </section>
 
 <!-- ============================ KNOWN ISSUES ============================ -->
 <section class="page">
   <h2 class="sec">Known issues</h2>
-  <p class="sub">Found while building this inventory. Recorded, not fixed — each fix changes existing behaviour and needs explicit approval, except the three marked "scheduled".</p>
+  <p class="sub">Found while building this inventory. Recorded, not fixed — each fix changes existing behaviour and needs explicit approval. Struck-through items have been fixed.</p>
   <ol class="issues">
-    <li><b>PITR restore broken on fresh installs</b> — hardcoded <code>minioadmin</code> credentials in <code>Restore</code>. <i>Scheduled: Schema Ledger 2.0 Phase 1 (H1).</i> (D3, H7)</li>
-    <li><b>Destructive-DDL override ungated</b> — any client can <code>SET vdb.allow_destructive=on</code>; its use isn't recorded. <i>Scheduled: Phase 1 (H2).</i> (H4)</li>
-    <li><b>Agents and MCP run as superuser</b> — Agent API DSN and MCP <code>run_sql</code> use <code>vectoradb</code>, so they can bypass the guard and append-only protection. <i>Scheduled: Phase 1 (H3).</i> (K5, K6, H3)</li>
-    <li>Integration §1 and §5 call <code>http://</code> endpoints that now serve TLS (test-only fix planned).</li>
+    <li><s>PITR restore broken on fresh installs (hardcoded <code>minioadmin</code>)</s> — <b>fixed</b> in Phase 1. (D3, H7)</li>
+    <li><s>Destructive-DDL override ungated</s> — <b>fixed</b> in Phase 1 (superusers and <code>vdb_admin</code> only). Use of the override is still not recorded (Phase 2). (H4, H8)</li>
+    <li><s>Agents and MCP run as superuser</s> — <b>fixed</b> in Phase 1 (own <code>agent-&lt;id&gt;</code> role; MCP as <code>vdbclient</code>). (K5, K6, H3)</li>
+    <li><s>Integration §1 and §5 call http:// endpoints that now serve TLS</s> — <b>fixed</b> in <code>13734a7</code>.</li>
     <li><code>vdb branch suspend main</code> stops the primary and the gateway won't wake it. (C3)</li>
     <li><code>vdb ha enable</code> after a failover deletes the live primary (<code>vec-standby</code>); post-failover <code>ha disable</code> routes main to a stopped container. (D4)</li>
     <li><code>backup</code>/<code>restore</code> always target <code>vec-main</code>, even after a failover; PITR always fetches the LATEST base backup. (D2, D3)</li>

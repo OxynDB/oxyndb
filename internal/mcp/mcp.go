@@ -209,7 +209,12 @@ func runTool(name string, args json.RawMessage) (string, error) {
 		if strings.TrimSpace(a.SQL) == "" {
 			return "", fmt.Errorf("sql is required")
 		}
-		return branch.QueryText(a.Branch, a.SQL)
+		// Run as the non-superuser client role, so an agent's SQL is subject to the
+		// guardrail and the ledger's append-only protection like any other client.
+		if branch.MCPSuperuser() {
+			return branch.QueryText(a.Branch, a.SQL)
+		}
+		return branch.ClientQueryText(a.Branch, a.SQL, "mcp")
 
 	case "changes":
 		var a struct {
