@@ -5,6 +5,8 @@
 // routes require authentication (an API key).
 //
 //	POST   /agents/{id}/branch   -> create a branch for the agent, return a DSN
+//	                                (optional body {task_id, parent_session_id, session_id}
+//	                                records Blackbox provenance for the agent's changes)
 //	DELETE /agents/{id}/branch   -> tear the agent's branch down
 //	GET    /agents               -> list active agent branches
 //	GET    /healthz              -> liveness (public)
@@ -12,6 +14,7 @@ package agentapi
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"net/url"
@@ -82,12 +85,34 @@ func Serve(addr string) error {
 		writeJSON(w, http.StatusOK, map[string]any{"agents": infos})
 	})
 	agents.HandleFunc("POST /agents/{id}/branch", func(w http.ResponseWriter, r *http.Request) {
-		info, err := branch.CreateAgentBranch(r.PathValue("id"))
-		if err != nil {
-			writeErr(w, http.StatusConflict, err)
+		// The body is optional. Without provenance the request takes exactly the
+		// original path and returns the original response.
+		var p branch.Provenance
+		_ = json.NewDecoder(r.Body).Decode(&p)
+		if !p.Requested() {
+			info, err := branch.CreateAgentBranch(r.PathValue("id"))
+			if err != nil {
+				writeErr(w, http.StatusConflict, err)
+				return
+			}
+			writeJSON(w, http.StatusCreated, info)
 			return
 		}
-		writeJSON(w, http.StatusCreated, info)
+		info, s, err := branch.CreateAgentBranchWithProvenance(r.PathValue("id"), p)
+		if err != nil {
+			code := http.StatusConflict
+			if errors.Is(err, branch.ErrInvalidRequest) {
+				code = http.StatusBadRequest
+			}
+			writeErr(w, code, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, struct {
+			branch.Info
+			SessionID       string `json:"session_id"`
+			TaskID          string `json:"task_id,omitempty"`
+			ParentSessionID string `json:"parent_session_id,omitempty"`
+		}{info, s.SessionID, p.TaskID, p.ParentSessionID})
 	})
 	agents.HandleFunc("DELETE /agents/{id}/branch", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")

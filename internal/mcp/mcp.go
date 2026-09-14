@@ -77,6 +77,15 @@ func dispatch(req rpcRequest) (rpcResponse, bool) {
 	resp := rpcResponse{JSONRPC: "2.0", ID: req.ID}
 	switch req.Method {
 	case "initialize":
+		var p struct {
+			ClientInfo struct {
+				Name string `json:"name"`
+			} `json:"clientInfo"`
+		}
+		_ = json.Unmarshal(req.Params, &p)
+		if branch.ValidProvenanceID(p.ClientInfo.Name) {
+			clientName = p.ClientInfo.Name
+		}
 		resp.Result = map[string]any{
 			"protocolVersion": protocolVersion,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
@@ -147,6 +156,15 @@ func toolList() []map[string]any {
 				"branch": str("branch name (default main)"),
 				"limit":  map[string]any{"type": "integer", "description": "max rows (default 50)"},
 			}, nil),
+		tool("execute_change",
+			"Run a schema change (or any SQL) on a branch as this agent, with provenance: it is recorded in Blackbox with this MCP session, the task_id and parent_session_id you pass, and a hash of the call. Blackbox policy rules are previewed first and enforced by the database. Returns JSON: status applied | blocked (the policy rule, SQLSTATE VDB01) | error | preview (dry_run), the policy preview, any warnings (VDB02) and the Blackbox entry ids it wrote. Runs without superuser rights.",
+			map[string]any{
+				"branch":            str("branch name (default main)"),
+				"sql":               str("the SQL to run"),
+				"task_id":           str("the task this change is for"),
+				"parent_session_id": str("the agent session that started this one"),
+				"dry_run":           map[string]any{"type": "boolean", "description": "only preview the policy rules; don't run anything"},
+			}, []string{"sql"}),
 		tool("policy_check",
 			"Preview which Blackbox policy rules a DDL statement would trigger on a branch — warn or block — without running it. A blocked statement fails with SQLSTATE VDB01 (docs/policy-errors.md).",
 			map[string]any{
@@ -185,6 +203,29 @@ var blackboxToolNames = []struct{ blackbox, ledger string }{
 	{"blackbox_integrity", "ledger_integrity"},
 	{"blackbox_entries", "ledger_entries"},
 }
+
+// clientName is the MCP client's name from initialize (the Blackbox actor for
+// execute_change); mcpSession is this server process's agent session id.
+var (
+	clientName = "mcp"
+	mcpSession string
+)
+
+func sessionID() (string, error) {
+	if mcpSession == "" {
+		id, err := branch.NewSessionID("mcp")
+		if err != nil {
+			return "", err
+		}
+		mcpSession = id
+	}
+	return mcpSession, nil
+}
+
+// jsonError is a tool failure whose message is a JSON document.
+type jsonError []byte
+
+func (e jsonError) Error() string { return string(e) }
 
 // resolveTool returns the ledger tool a Blackbox tool name stands for, or name.
 func resolveTool(name string) string {
@@ -308,6 +349,35 @@ func runTool(name string, args json.RawMessage) (string, error) {
 			return "", err
 		}
 		return branch.FormatLedgerEntries(entries), nil
+
+	case "execute_change":
+		var a struct {
+			Branch          string `json:"branch"`
+			SQL             string `json:"sql"`
+			TaskID          string `json:"task_id"`
+			ParentSessionID string `json:"parent_session_id"`
+			DryRun          bool   `json:"dry_run"`
+		}
+		_ = json.Unmarshal(args, &a)
+		sid, err := sessionID()
+		if err != nil {
+			return "", err
+		}
+		stdout := os.Stdout // see branch_before_change
+		os.Stdout = os.Stderr
+		res, err := branch.ExecuteChange(branch.ExecuteChangeRequest{
+			Branch: a.Branch, SQL: a.SQL, TaskID: a.TaskID, ParentSessionID: a.ParentSessionID, DryRun: a.DryRun,
+			SessionID: sid, AgentID: clientName, Tool: "mcp",
+		})
+		os.Stdout = stdout
+		if err != nil {
+			return "", err
+		}
+		b, _ := json.MarshalIndent(res, "", "  ")
+		if res.Status == "blocked" || res.Status == "error" {
+			return "", jsonError(b) // isError, with the same JSON body
+		}
+		return string(b), nil
 
 	case "policy_check":
 		var a struct {

@@ -17,6 +17,7 @@ import (
 //	vdb ledger integrity [branch]    check the ledger against its anchors
 //	vdb ledger export [branch]       every entry as JSON lines (--format jsonl)
 //	vdb ledger entries [branch]      newest entries with their ids (--limit N)
+//	vdb ledger sessions [branch]     agent sessions: agent, task, parent session (--limit N)
 //	vdb ledger branch-before <id>    a new branch of main as it was just before entry <id>
 //
 // It returns false for anything else, leaving the existing subcommands untouched.
@@ -64,6 +65,19 @@ func ledgerV2Cmd(args []string) bool {
 		entries, err := branch.LedgerEntries(name, limit)
 		must(err)
 		fmt.Println(branch.FormatLedgerEntries(entries))
+	case "sessions":
+		limit := 50
+		if v := optValue(args, "--limit"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				limit = n
+			}
+		}
+		if name = firstPositional(args[1:], "--limit"); name == "" {
+			name = "main"
+		}
+		ss, err := branch.AgentSessions(name, limit)
+		must(err)
+		fmt.Println(branch.FormatAgentSessions(ss))
 	case "branch-before":
 		branchBeforeCmd(args[1:])
 	default:

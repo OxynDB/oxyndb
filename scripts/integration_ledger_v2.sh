@@ -504,6 +504,99 @@ assert_eq "reinstalling keeps one gate trigger" "$(pg vec-main "SELECT count(*) 
 reset_rules
 pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2pol; DROP TABLE IF EXISTS v2pol_forbidden; DROP TABLE IF EXISTS v2pol_ok" >/dev/null
 
+echo "### 7. agent provenance (sessions, tasks, execute_change)"
+# mcp_exec <arguments-json>: one MCP process that introduces itself as v2test-agent
+# and calls execute_change; prints the tool's text result.
+mcp_exec() {
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"v2test-agent","version":"1"}}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"execute_change\",\"arguments\":$1}}" \
+    | "$S" mcp 2>/dev/null \
+    | python3 -c 'import sys,json
+for line in sys.stdin:
+    m=json.loads(line)
+    if m.get("id")==2: print(m["result"]["content"][0]["text"])'
+}
+jf() { python3 -c 'import sys,json; d=json.load(sys.stdin); print(eval(sys.argv[1], {"d": d}))' "$1"; }
+LONGID="$(printf 'x%.0s' $(seq 1 201))"   # one character over the 200 limit
+for a in v2plain v2prov v2bad; do curl -sk -H "$AUTH" -X DELETE "$AGENTS/agents/$a/branch" >/dev/null 2>&1; done
+$S policy warn drop-column >/dev/null 2>&1
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2exec; DROP TABLE IF EXISTS v2exec_dry" >/dev/null
+
+assert_eq "agent sessions table is installed" "$(pg vec-main "SELECT to_regclass('vdb.agent_sessions') IS NOT NULL")" "t"
+assert_eq "clients can't write agent sessions" \
+  "$(gw "$KEY" main "INSERT INTO vdb.agent_sessions(session_id, agent_id) VALUES ('x','y')" | grep -c 'permission denied')" "1"
+
+R="$(curl -sk -H "$AUTH" -X POST "$AGENTS/agents/v2plain/branch")"
+assert_eq "Agent API without provenance keeps its response" \
+  "$(echo "$R" | python3 -c 'import sys,json; print(",".join(sorted(json.load(sys.stdin))))')" "agent,branch,dsn,host,port,status"
+assert_eq "…and sets no session on the agent's branch" \
+  "$(pg vec-agent-v2plain "SELECT count(*) FROM pg_db_role_setting s, unnest(s.setconfig) c WHERE c LIKE 'vdb.session=%'")" "0"
+curl -sk -H "$AUTH" -X DELETE "$AGENTS/agents/v2plain/branch" >/dev/null 2>&1
+
+R="$(curl -sk -H "$AUTH" -X POST -d '{"task_id":"task-77","parent_session_id":"sess-parent-1"}' "$AGENTS/agents/v2prov/branch")"
+SID="$(echo "$R" | jf 'd.get("session_id","")')"
+assert_eq "Agent API with provenance returns the session, task and parent" \
+  "$(echo "$R" | jf 'd["task_id"]+" "+d["parent_session_id"]+" "+str(d["session_id"].startswith("agent-"))')" "task-77 sess-parent-1 True"
+assert_eq "the session is recorded on the agent's branch" \
+  "$(pg vec-agent-v2prov "SELECT agent_id||'/'||task_id||'/'||parent_session_id||'/'||tool FROM vdb.agent_sessions WHERE session_id='$SID'")" \
+  "agent-v2prov/task-77/sess-parent-1/agent-api"
+psql "$(echo "$R" | jf 'd["dsn"]')" -qc "CREATE TABLE v2prov_t(x int)" >/dev/null 2>&1
+PID="$(pg vec-agent-v2prov "SELECT max(id) FROM vdb.schema_ledger WHERE object_identity='public.v2prov_t'")"
+assert_eq "the agent's own change carries its session, task and parent" \
+  "$(pg vec-agent-v2prov "SELECT s.actor||'/'||s.session||'/'||e.task_id||'/'||e.parent_session FROM vdb.schema_ledger s JOIN vdb.ledger_ext e ON e.ledger_id=s.id WHERE s.id=${PID:-0}")" \
+  "agent-v2prov/$SID/task-77/sess-parent-1"
+assert_eq "an invalid task id is refused before any branch is made (400)" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' -H "$AUTH" -X POST -d "{\"task_id\":\"$LONGID\"}" "$AGENTS/agents/v2bad/branch")|$(sudo docker inspect vec-agent-v2bad >/dev/null 2>&1 || echo none)" \
+  "400|none"
+curl -sk -H "$AUTH" -X DELETE "$AGENTS/agents/v2prov/branch" >/dev/null 2>&1
+
+R="$(mcp_exec '{"sql":"CREATE TABLE v2exec(a int, b int)","task_id":"task-88","parent_session_id":"sess-p"}')"
+assert_eq "execute_change applies a change" "$(echo "$R" | jf 'd["status"]+" "+d["command"]')|$(pg vec-main "SELECT to_regclass('public.v2exec') IS NOT NULL")" "applied CREATE TABLE|t"
+EID="$(echo "$R" | jf 'd["blackbox_entries"][0] if d["blackbox_entries"] else 0')"
+MSID="$(echo "$R" | jf 'd["session_id"]')"
+HASH="$(echo "$R" | jf 'd["call_hash"]')"
+assert_eq "…and returns the Blackbox entry it wrote" "$([ "${EID:-0}" -gt 0 ] && echo yes)" "yes"
+assert_eq "the entry carries agent, tool, session, task, parent and call hash" \
+  "$(pg vec-main "SELECT s.actor||'/'||s.actor_kind||'/'||s.tool||'/'||s.session||'/'||e.task_id||'/'||e.parent_session||'/'||e.call_hash FROM vdb.schema_ledger s JOIN vdb.ledger_ext e ON e.ledger_id=s.id WHERE s.id=${EID:-0}")" \
+  "v2test-agent/agent/mcp/$MSID/task-88/sess-p/$HASH"
+assert_eq "the MCP session is recorded" \
+  "$(pg vec-main "SELECT agent_id||'/'||tool||'/'||task_id FROM vdb.agent_sessions WHERE session_id='$MSID'")" "v2test-agent/mcp/task-88"
+assert_eq "execute_change runs without superuser rights" \
+  "$(mcp_exec '{"sql":"ALTER SYSTEM SET work_mem = 1024"}' | jf 'd["status"]+" "+d["error"]["code"]')" "error 42501"
+
+R="$(mcp_exec '{"sql":"ALTER TABLE v2exec ALTER COLUMN a TYPE bigint"}')"
+assert_eq "execute_change reports a policy warning (VDB02) and still applies" \
+  "$(echo "$R" | jf 'd["status"]+" "+",".join(n["code"]+":"+(n["policy"]["rule_id"] if n.get("policy") else "") for n in d["notices"])+" "+",".join(m["rule_id"] for m in d["policy_preview"])')" \
+  "applied VDB02:alter-column-type alter-column-type"
+
+$S policy block drop-column >/dev/null 2>&1
+R="$(mcp_exec '{"sql":"ALTER TABLE v2exec DROP COLUMN b","task_id":"task-89"}')"
+assert_eq "execute_change reports a block with the policy rule (VDB01)" \
+  "$(echo "$R" | jf 'd["status"]+" "+d["policy"]["rule_id"]+" "+d["error"]["code"]+" "+str(d["policy"]["blackbox_id"] in d["blackbox_entries"])')" \
+  "blocked drop-column VDB01 True"
+assert_eq "…and the column is still there" \
+  "$(pg vec-main "SELECT count(*) FROM information_schema.columns WHERE table_name='v2exec' AND column_name='b'")" "1"
+$S policy warn drop-column >/dev/null 2>&1
+
+R="$(mcp_exec '{"sql":"CREATE TABLE v2exec_dry(x int)","dry_run":true}')"
+assert_eq "dry_run only previews" "$(echo "$R" | jf 'd["status"]')|$(pg vec-main "SELECT to_regclass('public.v2exec_dry') IS NULL")" "preview|t"
+R2="$(mcp_exec '{"sql":"CREATE TABLE v2exec_dry(x int)","dry_run":true}')"
+R3="$(mcp_exec '{"sql":"CREATE TABLE v2exec_dry(y int)","dry_run":true}')"
+assert_eq "the call hash is the same for the same arguments and differs otherwise" \
+  "$([ "$(echo "$R" | jf 'd["call_hash"]')" = "$(echo "$R2" | jf 'd["call_hash"]')" ] && echo same)|$([ "$(echo "$R" | jf 'd["call_hash"]')" != "$(echo "$R3" | jf 'd["call_hash"]')" ] && echo differs)" \
+  "same|differs"
+assert_eq "execute_change reports a database error" \
+  "$(mcp_exec '{"sql":"CREATE TABLE v2exec(a int)"}' | jf 'd["status"]+" "+d["error"]["code"]')" "error 42P07"
+assert_eq "an invalid task id is refused" \
+  "$(mcp_exec "{\"sql\":\"SELECT 1\",\"task_id\":\"$LONGID\"}" | grep -c 'task_id')" "1"
+
+assert_eq "vdb blackbox sessions lists the MCP session" "$($S blackbox sessions main --limit 200 | grep -c "^$MSID ")" "1"
+assert_eq "REST sessions shows its entries" \
+  "$(curl -sk -H "$AUTH" "$API/api/branches/main/blackbox/sessions?limit=200" | python3 -c 'import sys,json; print([s["entries"] >= 1 for s in json.load(sys.stdin) if s["session_id"]==sys.argv[1]])' "$MSID")" "[True]"
+assert_eq "the hash chain still verifies" \
+  "$(curl -sk -H "$AUTH" "$API/api/branches/main/ledger/verify" | python3 -c 'import sys,json; print(json.load(sys.stdin)["rows"][0][2])')" "0"
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2exec; DROP TABLE IF EXISTS v2exec_dry" >/dev/null
+
 echo
 echo "==== ${PASS} passed, ${FAIL} failed ===="
 [ "$FAIL" -eq 0 ]

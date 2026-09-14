@@ -249,6 +249,32 @@ paths:
                     risk: { type: string }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /api/branches/{name}/ledger/sessions:
+    get:
+      tags: [ledger]
+      summary: Agent sessions on the branch — agent, task, parent session and how many Blackbox entries each caused.
+      parameters:
+        - { $ref: "#/components/parameters/BranchName" }
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 1000 } }
+      responses:
+        "200":
+          description: Sessions, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    session_id: { type: string }
+                    agent_id: { type: string }
+                    parent_session_id: { type: [string, "null"] }
+                    task_id: { type: [string, "null"] }
+                    tool: { type: [string, "null"] }
+                    started_at: { type: string, format: date-time }
+                    entries: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /api/branches/{name}/ledger/{id}/branch:
     post:
       tags: [ledger]
@@ -480,6 +506,20 @@ paths:
       tags: [agents]
       summary: Create an agent's branch and return its DSN. (Agent Branch API, :8088)
       parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: false
+        description: >-
+          Optional Blackbox provenance. Without it the request and response are unchanged. With it,
+          a session is recorded on the agent's branch and every change the agent makes there carries
+          the session, task and parent session; the response adds session_id (and the ids sent).
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                task_id: { type: string, maxLength: 200 }
+                parent_session_id: { type: string, maxLength: 200 }
+                session_id: { type: string, maxLength: 200, description: "Your own session id (default: generated)" }
       responses:
         "201":
           description: Created
