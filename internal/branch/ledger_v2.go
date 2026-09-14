@@ -18,6 +18,10 @@ func EnsureLedgerV2(name string) error {
 	if err := psqlStdin(name, ledger.SchemaV2); err != nil {
 		return fmt.Errorf("installing ledger 2.0 on %q: %w", name, err)
 	}
+	// The policy gate (docs/policy-errors.md) builds on the 2.0 objects above.
+	if err := psqlStdin(name, ledger.SchemaPolicy); err != nil {
+		return fmt.Errorf("installing the Blackbox policy gate on %q: %w", name, err)
+	}
 	return nil
 }
 

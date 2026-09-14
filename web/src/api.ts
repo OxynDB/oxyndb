@@ -104,6 +104,34 @@ export type BranchBeforeResult = {
 export const branchBeforeEntry = (source: string, entryId: number, name?: string) =>
   req('POST', `${API}/api/branches/${source}/ledger/${entryId}/branch`, name ? { name } : {}) as Promise<BranchBeforeResult>
 
+// --- Blackbox policy gate (docs/policy-errors.md) ---
+export type PolicyAction = 'warn' | 'block'
+export type PolicyRule = {
+  rule_id: string; command_tag: string; pattern: string | null; action: PolicyAction; reason: string
+  hint: string | null; enabled: boolean; builtin: boolean; updated_at: string; updated_by: string | null
+}
+export type PolicyMatch = {
+  v: number; rule_id: string; action: PolicyAction; command: string; matched: string | null; reason: string
+  hint: string; override: string | null; evaluation_id: number | null; blackbox_id: number | null
+}
+export type PolicyCheckResult = { command: string; matches: PolicyMatch[] }
+export type PolicyEvaluation = {
+  id: number; at: string; xid: number | null; rule_id: string; action: 'warn' | 'block' | 'allowed'
+  command_tag: string | null; actor: string | null; blackbox_id: number | null
+}
+const policies = (branch: string) => `${API}/api/branches/${branch}/policies`
+export const getPolicyRules = (branch: string) => req('GET', policies(branch)) as Promise<PolicyRule[]>
+export const addPolicyRule = (branch: string, rule: Pick<PolicyRule, 'rule_id' | 'command_tag' | 'pattern' | 'action' | 'reason' | 'hint'>) =>
+  req('POST', policies(branch), rule)
+export const updatePolicyRule = (branch: string, rule: string, change: { action?: PolicyAction; enabled?: boolean }) =>
+  req('PUT', `${policies(branch)}/${encodeURIComponent(rule)}`, change)
+export const removePolicyRule = (branch: string, rule: string) =>
+  req('DELETE', `${policies(branch)}/${encodeURIComponent(rule)}`)
+export const checkPolicy = (branch: string, sql: string) =>
+  req('POST', `${policies(branch)}/check`, { sql }) as Promise<PolicyCheckResult>
+export const getPolicyEvaluations = (branch: string, limit = 20) =>
+  req('GET', `${policies(branch)}/evaluations?limit=${limit}`) as Promise<PolicyEvaluation[]>
+
 // --- migration (streamed as Server-Sent Events) ---
 export type ImportResult = { status: string; target: string; tables: number }
 export type ImportEvent =

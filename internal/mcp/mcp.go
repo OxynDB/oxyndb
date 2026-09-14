@@ -147,6 +147,12 @@ func toolList() []map[string]any {
 				"branch": str("branch name (default main)"),
 				"limit":  map[string]any{"type": "integer", "description": "max rows (default 50)"},
 			}, nil),
+		tool("policy_check",
+			"Preview which Blackbox policy rules a DDL statement would trigger on a branch — warn or block — without running it. A blocked statement fails with SQLSTATE VDB01 (docs/policy-errors.md).",
+			map[string]any{
+				"branch": str("branch name (default main)"),
+				"sql":    str("the DDL statement to check"),
+			}, []string{"sql"}),
 		tool("branch_before_change",
 			"Create a new branch holding main exactly as it was just before a Blackbox entry (its id from `blackbox_entries` or `ledger_entries`) — to inspect or recover from a bad change. main is not modified. Takes a few minutes (base backup + WAL replay).",
 			map[string]any{
@@ -302,6 +308,18 @@ func runTool(name string, args json.RawMessage) (string, error) {
 			return "", err
 		}
 		return branch.FormatLedgerEntries(entries), nil
+
+	case "policy_check":
+		var a struct {
+			Branch string `json:"branch"`
+			SQL    string `json:"sql"`
+		}
+		_ = json.Unmarshal(args, &a)
+		tag, matches, err := branch.PolicyCheck(a.Branch, a.SQL)
+		if err != nil {
+			return "", err
+		}
+		return branch.FormatPolicyCheck(tag, matches), nil
 
 	case "branch_before_change":
 		var a struct {

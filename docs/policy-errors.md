@@ -82,7 +82,8 @@ block ERROR is raised (the first blocking rule by `rule_id` order).
 
 Rules for clients:
 - Detect by **SQLSTATE**, then parse DETAIL as JSON. Don't parse MESSAGE or HINT.
-- Ignore keys you don't know; new keys may be added in v1.
+- Ignore keys you don't know; new keys may be added in v1. Key order and whitespace
+  are not significant.
 - The statement text is not repeated in DETAIL (it can be large or sensitive); it is
   in the Blackbox entry referenced by `blackbox_id`.
 

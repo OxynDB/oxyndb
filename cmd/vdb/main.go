@@ -78,6 +78,15 @@ Blackbox — the database's record of every schema change (RECORD layer; vdb led
   blackbox branch-before <id>     New branch of main as it was just before entry <id> (--as name)
   blackbox revert --to <ts>       Time-travel revert of a branch's schema+data to a moment
 
+Blackbox policy gate — checks every schema change before it runs (docs/policy-errors.md):
+  policy [list] [--branch b]      Show the rules: action (warn|block) and whether enabled
+  policy check "<SQL>"            Preview the rules a statement would trigger (exit 1 if one blocks)
+  policy block|warn <rule>        Refuse matching changes (VDB01) or only warn about them (VDB02)
+  policy enable|disable <rule>    Turn a rule on or off
+  policy add <rule> --command "ALTER TABLE" [--pattern <regex>] [--block] --reason "…" [--hint "…"]
+  policy remove <rule>            Remove a rule you added (built-in rules can only be disabled)
+  policy evaluations [--limit N]  Recent warnings, blocks and overrides
+
 Migration:
   import --from <src> [--as <name>]  Migrate a DB into a new instance. <src> is a
                        connection string — postgres://, mysql://, mariadb://, mongodb:// —
@@ -240,6 +249,8 @@ func main() {
 		apikeyCmd(os.Args[2:])
 	case "admin":
 		adminCmd(os.Args[2:])
+	case "policy":
+		policyCmd(os.Args[2:])
 	case "serve":
 		must(agentapi.Serve(addrFlag(os.Args[2:], ":8088")))
 	case "controlplane":

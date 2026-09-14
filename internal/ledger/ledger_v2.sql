@@ -61,8 +61,11 @@ BEGIN
     e.task_id        := nullif(current_setting('vdb.task', true), '');
     e.parent_session := nullif(current_setting('vdb.parent_session', true), '');
     e.call_hash      := nullif(current_setting('vdb.call_hash', true), '');
+    -- The guardrail override was set, or the policy gate let a blocking rule
+    -- through for an admin (vdb.policy_override_used, set by policy.sql).
     e.override_used  := coalesce(nullif(current_setting('vdb.allow_destructive', true), ''), 'off')
-                          IN ('on','true','1');
+                          IN ('on','true','1')
+                        OR coalesce(current_setting('vdb.policy_override_used', true), '') = 'on';
     e.captured_at    := clock_timestamp();
     e.ext_hash       := vdb._ext_hash(e);
     INSERT INTO vdb.ledger_ext SELECT (e).*;
