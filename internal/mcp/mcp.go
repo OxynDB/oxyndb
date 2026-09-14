@@ -141,6 +141,19 @@ func toolList() []map[string]any {
 		tool("ledger_integrity",
 			"Check a branch's schema ledger against its checkpoint anchors, which are stored outside the database — catches edited, deleted or wiped history even if the hash chain was rewritten.",
 			map[string]any{"branch": str("branch name (default main)")}, nil),
+		tool("ledger_entries",
+			"List a branch's newest schema ledger entries with their ids, newest first — pass an id to branch_before_change.",
+			map[string]any{
+				"branch": str("branch name (default main)"),
+				"limit":  map[string]any{"type": "integer", "description": "max rows (default 50)"},
+			}, nil),
+		tool("branch_before_change",
+			"Create a new branch holding main exactly as it was just before a schema ledger entry (its id from `ledger_entries`) — to inspect or recover from a bad change. main is not modified. Takes a few minutes (base backup + WAL replay).",
+			map[string]any{
+				"entry_id": map[string]any{"type": "integer", "description": "ledger entry id"},
+				"branch":   str("source branch (only main is supported)"),
+				"name":     str("new branch name (default main-before-<id>)"),
+			}, []string{"entry_id"}),
 	}
 }
 
@@ -244,6 +257,41 @@ func runTool(name string, args json.RawMessage) (string, error) {
 			return "", err
 		}
 		return rep.Summary(), nil
+
+	case "ledger_entries":
+		var a struct {
+			Branch string `json:"branch"`
+			Limit  int    `json:"limit"`
+		}
+		_ = json.Unmarshal(args, &a)
+		entries, err := branch.LedgerEntries(a.Branch, a.Limit)
+		if err != nil {
+			return "", err
+		}
+		return branch.FormatLedgerEntries(entries), nil
+
+	case "branch_before_change":
+		var a struct {
+			EntryID int64  `json:"entry_id"`
+			Branch  string `json:"branch"`
+			Name    string `json:"name"`
+		}
+		_ = json.Unmarshal(args, &a)
+		if a.EntryID <= 0 {
+			return "", fmt.Errorf("entry_id is required")
+		}
+		// The restore starts containers through helpers that echo to stdout, which
+		// here carries the protocol. Requests are handled one at a time and the
+		// encoder holds the real stdout, so point os.Stdout at stderr meanwhile.
+		stdout := os.Stdout
+		os.Stdout = os.Stderr
+		res, err := branch.BranchBeforeEntry(a.Branch, a.EntryID, a.Name, nil)
+		os.Stdout = stdout
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("Branch %q is ready: %s as it was just before ledger entry %d (%s %s), recovered to %s %s from base backup %s in %ds.",
+			res.Branch, res.Source, res.EntryID, res.CommandTag, res.Object, res.TargetKind, res.Target, res.BaseBackup, res.Seconds), nil
 
 	default:
 		return "", fmt.Errorf("unknown tool: %s", name)

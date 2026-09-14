@@ -91,6 +91,18 @@ export const getIntegrity = (name: string) =>
 export const createCheckpoint = (name: string) =>
   req('POST', `${API}/api/branches/${name}/ledger/checkpoint`) as Promise<{ checkpoint: Checkpoint | null; anchor_path?: string; status: string }>
 export const exportLedgerUrl = (name: string) => `${API}/api/branches/${name}/ledger/export`
+export type LedgerEntry = {
+  id: number; at: string; actor: string; command_tag: string; object_identity: string; status: string; risk: string
+}
+export const getLedgerEntries = (name: string, limit = 50) =>
+  req('GET', `${API}/api/branches/${name}/ledger/entries?limit=${limit}`) as Promise<LedgerEntry[]>
+export type BranchBeforeResult = {
+  branch: string; source: string; entry_id: number; command_tag: string; object_identity: string
+  statement: string; target_kind: 'xid' | 'time'; target: string; base_backup: string
+  last_ledger_id: number; seconds: number
+}
+export const branchBeforeEntry = (source: string, entryId: number, name?: string) =>
+  req('POST', `${API}/api/branches/${source}/ledger/${entryId}/branch`, name ? { name } : {}) as Promise<BranchBeforeResult>
 
 // --- migration (streamed as Server-Sent Events) ---
 export type ImportResult = { status: string; target: string; tables: number }
