@@ -1,10 +1,10 @@
-import React, { useState, type ReactNode } from 'react'
+import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider, NavLink, Outlet, Link, Navigate } from 'react-router-dom'
 import './styles.css'
-import { getTheme, toggleTheme } from './theme'
-import { logout as apiLogout } from './api'
 import { AuthProvider, useAuth } from './auth-context'
+import AppLayout from './components/AppLayout'
+import { Mark, ThemeToggle } from './components/brand'
 import Landing from './pages/Landing'
 import Docs from './pages/Docs'
 import Guide from './pages/Guide'
@@ -20,53 +20,13 @@ import Console from './pages/Console'
 import Login from './pages/Login'
 import ApiKeys from './pages/ApiKeys'
 
-function RequireAuth({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth()
-  if (loading) return <div className="container muted">Loading…</div>
-  if (!user) return <Navigate to="/login" replace />
-  return <>{children}</>
+function Loading() {
+  return <div className="container muted">Loading…</div>
 }
 
-export function Mark({ size = 26 }: { size?: number }) {
-  return (
-    <svg className="mark" width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden>
-      <defs>
-        <linearGradient id="vg" x1="0" y1="24" x2="24" y2="0">
-          <stop offset="0" stopColor="#8b6dff" />
-          <stop offset="1" stopColor="#34d6f0" />
-        </linearGradient>
-      </defs>
-      <path d="M12 22V13" stroke="url(#vg)" strokeWidth="2.4" strokeLinecap="round" />
-      <path d="M12 13C12 9.5 7 9.5 7 5.5" stroke="url(#vg)" strokeWidth="2.4" strokeLinecap="round" />
-      <path d="M12 13C12 9.5 17 9.5 17 5.5" stroke="url(#vg)" strokeWidth="2.4" strokeLinecap="round" />
-      <circle cx="12" cy="22" r="2.1" fill="url(#vg)" />
-      <circle cx="7" cy="4.6" r="2.4" fill="url(#vg)" />
-      <circle cx="17" cy="4.6" r="2.4" fill="url(#vg)" />
-    </svg>
-  )
-}
-
-function ThemeToggle() {
-  const [theme, setTheme] = useState(getTheme())
-  return (
-    <button className="theme-toggle" title="Toggle theme" onClick={() => setTheme(toggleTheme())}>
-      {theme === 'dark' ? '☀' : '☾'}
-    </button>
-  )
-}
-
-function UserMenu() {
-  const { user, setUser } = useAuth()
-  if (!user) return <NavLink to="/login" className="btn ghost" style={{ padding: '6px 12px' }}>Log in</NavLink>
-  return (
-    <div className="usermenu">
-      <NavLink to="/keys" title="API keys" className="muted" style={{ fontSize: 13 }}>{user.email}</NavLink>
-      <button className="ghost" onClick={async () => { await apiLogout().catch(() => {}); setUser(null); location.assign('/login') }}>Logout</button>
-    </div>
-  )
-}
-
-function Layout() {
+// PublicLayout: the marketing pages (Home, Log in), and Guide/Docs for visitors
+// who aren't signed in. The app's own pages live in AppLayout's sidebar.
+function PublicLayout() {
   const { user } = useAuth()
   return (
     <>
@@ -76,20 +36,12 @@ function Layout() {
           <NavLink to="/" end>Home</NavLink>
           <NavLink to="/guide">Guide</NavLink>
           <NavLink to="/docs">Docs</NavLink>
-          {user && <>
-            <NavLink to="/dashboard">Dashboard</NavLink>
-            <NavLink to="/blackbox">Blackbox</NavLink>
-            <NavLink to="/integrity">Integrity</NavLink>
-            <NavLink to="/policies">Policies</NavLink>
-            <NavLink to="/console">Console</NavLink>
-            <NavLink to="/import">Import</NavLink>
-            <NavLink to="/pipelines">Pipelines</NavLink>
-            <NavLink to="/keys">API keys</NavLink>
-          </>}
         </div>
         <div className="right">
           <a href="https://github.com/vectoradb/vectoraDB" target="_blank" rel="noreferrer" className="muted" style={{ fontSize: 13 }}>GitHub ↗</a>
-          <UserMenu />
+          {user
+            ? <Link to="/dashboard" className="btn ghost" style={{ padding: '6px 12px' }}>Open dashboard →</Link>
+            : <NavLink to="/login" className="btn ghost" style={{ padding: '6px 12px' }}>Log in</NavLink>}
           <ThemeToggle />
         </div>
       </header>
@@ -105,25 +57,51 @@ function Layout() {
   )
 }
 
+// The app's pages: signed in, inside the sidebar layout; otherwise to Log in.
+function SignedInLayout() {
+  const { user, loading } = useAuth()
+  if (loading) return <Loading />
+  if (!user) return <Navigate to="/login" replace />
+  return <AppLayout />
+}
+
+// Guide and Docs help both visitors and users: inside the app when signed in.
+function HelpLayout() {
+  const { user, loading } = useAuth()
+  if (loading) return <Loading />
+  return user ? <AppLayout /> : <PublicLayout />
+}
+
+// Every address is unchanged; only which layout wraps each page differs.
 const router = createBrowserRouter([
   {
     path: '/',
-    element: <Layout />,
+    element: <PublicLayout />,
     children: [
       { index: true, element: <Landing /> },
-      { path: 'docs', element: <Docs /> },
-      { path: 'guide', element: <Guide /> },
       { path: 'login', element: <Login /> },
-      { path: 'dashboard', element: <RequireAuth><Dashboard /></RequireAuth> },
-      { path: 'blackbox', element: <RequireAuth><Ledger /></RequireAuth> },
-      { path: 'ledger', element: <RequireAuth><Ledger /></RequireAuth> }, // the page's original address
-      { path: 'integrity', element: <RequireAuth><Integrity /></RequireAuth> },
-      { path: 'policies', element: <RequireAuth><Policies /></RequireAuth> },
-      { path: 'import', element: <RequireAuth><Import /></RequireAuth> },
-      { path: 'pipelines', element: <RequireAuth><Pipelines /></RequireAuth> },
-      { path: 'pipelines/:id', element: <RequireAuth><PipelineEditor /></RequireAuth> },
-      { path: 'console', element: <RequireAuth><Console /></RequireAuth> },
-      { path: 'keys', element: <RequireAuth><ApiKeys /></RequireAuth> },
+    ],
+  },
+  {
+    element: <HelpLayout />,
+    children: [
+      { path: 'guide', element: <Guide /> },
+      { path: 'docs', element: <Docs /> },
+    ],
+  },
+  {
+    element: <SignedInLayout />,
+    children: [
+      { path: 'dashboard', element: <Dashboard /> },
+      { path: 'blackbox', element: <Ledger /> },
+      { path: 'ledger', element: <Ledger /> }, // the page's original address
+      { path: 'integrity', element: <Integrity /> },
+      { path: 'policies', element: <Policies /> },
+      { path: 'import', element: <Import /> },
+      { path: 'pipelines', element: <Pipelines /> },
+      { path: 'pipelines/:id', element: <PipelineEditor /> },
+      { path: 'console', element: <Console /> },
+      { path: 'keys', element: <ApiKeys /> },
     ],
   },
 ])
