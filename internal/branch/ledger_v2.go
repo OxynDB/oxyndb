@@ -22,6 +22,10 @@ func EnsureLedgerV2(name string) error {
 	if err := psqlStdin(name, ledger.SchemaPolicy); err != nil {
 		return fmt.Errorf("installing the Blackbox policy gate on %q: %w", name, err)
 	}
+	// Agent provenance (vdb.agent_sessions) builds on the same 2.0 objects.
+	if err := psqlStdin(name, ledger.SchemaProvenance); err != nil {
+		return fmt.Errorf("installing Blackbox provenance on %q: %w", name, err)
+	}
 	return nil
 }
 

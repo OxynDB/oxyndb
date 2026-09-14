@@ -18,6 +18,7 @@ import (
 //	POST /api/branches/{name}/ledger/checkpoint  anchor new entries now
 //	GET  /api/branches/{name}/ledger/export      every entry as JSON lines
 //	GET  /api/branches/{name}/ledger/entries     newest entries with their ids
+//	GET  /api/branches/{name}/ledger/sessions    agent sessions (provenance)
 //	POST /api/branches/{name}/ledger/{id}/branch a new branch as of just before entry {id}
 func registerLedgerV2(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/branches/{name}/ledger/integrity", func(w http.ResponseWriter, r *http.Request) {
@@ -66,6 +67,22 @@ func registerLedgerV2(mux *http.ServeMux) {
 			return
 		}
 		writeJSON(w, 200, entries)
+	})
+
+	// Agent sessions (Blackbox provenance): agent, task, parent session, entries.
+	mux.HandleFunc("GET /api/branches/{name}/ledger/sessions", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		if _, err := branch.EnsureRunning(name); err != nil {
+			writeErr(w, 404, err)
+			return
+		}
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		ss, err := branch.AgentSessions(name, limit)
+		if err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, 200, ss)
 	})
 
 	// Branch from just before a ledger entry. Synchronous: it returns once the

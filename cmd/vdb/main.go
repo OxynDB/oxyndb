@@ -75,6 +75,7 @@ Blackbox — the database's record of every schema change (RECORD layer; vdb led
   blackbox integrity [branch]     Check the record against its anchors (detects rewritten history)
   blackbox export [branch]        Write every entry as JSON lines (for vdb-verify / audits)
   blackbox entries [branch]       Newest entries with their ids (--limit N)
+  blackbox sessions [branch]      Agent sessions: agent, task, parent session, entries (--limit N)
   blackbox branch-before <id>     New branch of main as it was just before entry <id> (--as name)
   blackbox revert --to <ts>       Time-travel revert of a branch's schema+data to a moment
 
