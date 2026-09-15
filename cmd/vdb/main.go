@@ -44,6 +44,8 @@ Usage:
 
 Setup:
   setup                One-time: create/start the local engine VM (macOS: Lima, Windows: WSL2) and bring the stack up
+  update [--check]     Install the newest release: new engine, restarted servers, Blackbox upgrades — data untouched
+                       (--yes skips the confirmation, --version vX.Y.Z picks a release)
 
 Stack:
   start                Bring EVERYTHING up in the background: stack + gateway + APIs
@@ -154,6 +156,12 @@ func main() {
 	case "setup":
 		must(host.Setup())
 	case "start":
+		// Linux host: look for a newer release while the stack starts. (macOS and
+		// Windows check on the host before forwarding; the guest never checks.)
+		notice := func() {}
+		if os.Getenv("VECTORADB_IN_GUEST") == "" {
+			notice = host.StartUpdateNotice()
+		}
 		must(branch.Up())
 		for name, args := range services {
 			must(daemon.Start(name, args))
@@ -176,6 +184,11 @@ func main() {
 		}
 		fmt.Println("\nThe connection string above uses a ready-to-go API key (also saved in ~/.vectoradb/config).")
 		fmt.Println("Stop everything with: vdb stop")
+		notice()
+	case "update":
+		updateCmd(os.Args[2:])
+	case "_update-guest": // the engine-side steps of `vdb update`
+		updateGuestCmd(os.Args[2:])
 	case "stop":
 		for name := range services {
 			daemon.Stop(name)

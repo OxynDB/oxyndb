@@ -28,6 +28,9 @@ jobs:
       # merges into it never drops another job's entries.
       - name: Release checksum merging
         run: bash scripts/test_release_checksums.sh
+      # The release job's check that every file `vdb update` needs was published.
+      - name: Release assets for vdb update
+        run: bash scripts/test_check_release_assets.sh
       - name: gofmt
         run: |
           unformatted=$(gofmt -l cmd internal)

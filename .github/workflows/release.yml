@@ -86,6 +86,15 @@ jobs:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: gh release upload "$TAG" dist/vdb-* dist/vectoradb-docker-context.tar.gz --clobber
 
+      # `vdb update` only offers a release that has every file it needs for the
+      # user's platform, listed in SHA256SUMS. Fail here rather than publish a
+      # release nobody can update to.
+      - name: Check the files vdb update needs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: bash scripts/check-release-assets.sh "$TAG"
+
   # Publish the Postgres+wal-g image so `vdb setup` pulls it (~30-60s) instead of
   # building it locally on every install (~2-5min, and dependent on the wal-g
   # release being reachable). ensureImage() falls back to building if the pull

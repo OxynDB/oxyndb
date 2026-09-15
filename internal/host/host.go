@@ -33,7 +33,7 @@ const envInGuest = "VECTORADB_IN_GUEST"
 var localCommands = map[string]bool{
 	"": true, "help": true, "-h": true, "--help": true,
 	"version": true, "-v": true, "--version": true,
-	"setup": true, "vm": true,
+	"setup": true, "vm": true, "update": true,
 }
 
 // Maybe performs host-side dispatch.
@@ -52,6 +52,16 @@ func Maybe(args []string) (handled bool, err error) {
 	}
 	if localCommands[sub] {
 		return false, nil
+	}
+	if sub == "start" {
+		// Look for a newer release while the stack starts; the notice (if any)
+		// is the last line printed.
+		notice := StartUpdateNotice()
+		err := hostForward(args)
+		if err == nil {
+			notice()
+		}
+		return true, err
 	}
 	return true, hostForward(args)
 }

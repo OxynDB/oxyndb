@@ -3,7 +3,7 @@
 # VectoraDB runs inside the Linux dev VM (ZFS + Docker); day-to-day operation is
 # via `lima /tmp/vdb <command>`. This Makefile just builds/checks the CLI.
 
-.PHONY: build vet fmt vm-build test integration web-dev web-build release release-linux wsl-zfs wsl-distro feature-doc integration-v2
+.PHONY: build vet fmt vm-build test integration web-dev web-build release release-linux wsl-zfs wsl-distro feature-doc integration-v2 integration-update
 
 VERSION ?= 0.1.0
 LDFLAGS := -s -w -X github.com/vectoradb/vectoradb/internal/version.Version=$(VERSION)
@@ -53,6 +53,9 @@ integration:      ## Run the full end-to-end integration test in the Lima VM
 
 integration-v2:   ## Run the Blackbox 2.0 checks (behaviour-unchanged + new) in the Lima VM
 	lima bash -c 'cd "$(CURDIR)" && go build -o /tmp/vdb ./cmd/vdb && go build -o /tmp/vdb-verify ./cmd/vdb-verify' && lima bash "$(CURDIR)/scripts/integration_ledger_v2.sh"
+
+integration-update: ## Run the `vdb update` / new-release notice checks against a fake GitHub in the Lima VM
+	lima bash "$(CURDIR)/scripts/integration_update.sh"
 
 web-dev:          ## DEPRECATED: the engine serves the UI at https://localhost:8080 (`vdb start`). Hot-reload dev server only.
 	@echo "note: 'make web-dev' is deprecated — 'vdb start' serves the UI at https://localhost:8080."
