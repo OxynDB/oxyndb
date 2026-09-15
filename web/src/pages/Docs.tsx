@@ -33,7 +33,7 @@ export default function Docs() {
           <tr><td><code>vdb logs [gateway|api]</code></td><td>Print a background server's log</td></tr>
           <tr><td><code>vdb branch create|list|delete|suspend|resume &lt;name&gt;</code></td><td>Manage copy-on-write branches</td></tr>
           <tr><td><code>vdb backup create|list</code> · <code>vdb restore --to &lt;ts|latest&gt;</code></td><td>Time-travel / point-in-time recovery</td></tr>
-          <tr><td><code>vdb ha enable|status|failover|disable</code></td><td>High availability (streaming standby + failover)</td></tr>
+          <tr><td><code>vdb ha enable|status|failover|disable|failback</code></td><td>High availability (streaming standby, failover, and failback to main)</td></tr>
           <tr><td><code>vdb gateway [--addr :6432] [--idle 2m]</code></td><td>The smart SQL gateway — routes by branch, auto-suspend/resume</td></tr>
           <tr><td><code>vdb serve [--addr :8088]</code></td><td>Agent Branch API — one database per AI agent</td></tr>
           <tr><td><code>vdb user create &lt;email&gt;</code> · <code>vdb apikey create|list|revoke &lt;email&gt;</code></td><td>Accounts &amp; API keys</td></tr>

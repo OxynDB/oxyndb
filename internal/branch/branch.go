@@ -177,6 +177,11 @@ func Init() error {
 	if err := ensureNetwork(); err != nil {
 		return err
 	}
+	// After `vdb ha failover` the promoted standby is the primary; the old main
+	// must stay stopped.
+	if PrimaryContainer() == container("standby") {
+		return ensurePromotedStandby()
+	}
 	if ContainerState("main") == "running" {
 		if err := syncRolePassword("main"); err != nil { // ensure the role matches the generated secret
 			return err
@@ -829,9 +834,28 @@ func ContainerState(name string) string {
 }
 
 // Suspend stops a branch's container. The ZFS dataset (its data) is preserved,
-// so it can be resumed later with no data loss.
+// so it can be resumed later with no data loss. The primary and the HA standby
+// can't be suspended (see suspendRefusal).
 func Suspend(name string) error {
+	if err := suspendRefusal(name, PrimaryContainer(), ContainerState("standby") != "absent"); err != nil {
+		return err
+	}
 	return run("docker", "stop", container(name))
+}
+
+// suspendRefusal says why a branch must not be suspended: the gateway never wakes
+// the primary (that could revive a stepped-down one), and the HA standby is
+// managed by `vdb ha` — after a failover it is the primary itself.
+func suspendRefusal(name, primary string, haEnabled bool) error {
+	switch {
+	case name == "main":
+		return fmt.Errorf("refusing to suspend the primary branch 'main': the gateway won't wake it (stop everything with `vdb stop`)")
+	case container(name) == primary:
+		return fmt.Errorf("refusing to suspend %q: it is serving 'main' since `vdb ha failover`", name)
+	case name == "standby" && haEnabled:
+		return fmt.Errorf("refusing to suspend the HA standby: manage it with `vdb ha` (e.g. `vdb ha disable`)")
+	}
+	return nil
 }
 
 // Resume starts a suspended branch container and waits until it is ready.

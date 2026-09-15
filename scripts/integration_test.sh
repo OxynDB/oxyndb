@@ -38,7 +38,9 @@ assert_eq "branch sees its own write" "$(pg vec-itb 'SELECT count(*) FROM iso')"
 assert_eq "main isolated from branch" "$(pg vec-main "SELECT to_regclass('public.iso') IS NULL")" "t"
 
 echo "### 3. time-travel / PITR"
-pg vec-main "DROP TABLE IF EXISTS pit; CREATE TABLE pit(id int); INSERT INTO pit SELECT generate_series(1,3);" >/dev/null
+# The guardrail blocks DROP TABLE without the override, which silently kept the
+# previous run's rows (failback now keeps writes made during a failover).
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS pit; CREATE TABLE pit(id int); INSERT INTO pit SELECT generate_series(1,3);" >/dev/null
 $S backup create >/dev/null 2>&1
 pg vec-main "SELECT pg_switch_wal();" >/dev/null; sleep 3
 $S restore --to latest >/dev/null 2>&1; sleep 1
@@ -50,6 +52,9 @@ $S branch suspend itb >/dev/null 2>&1
 assert_eq "branch suspends" "$(sudo docker inspect -f '{{.State.Status}}' vec-itb 2>/dev/null)" "exited"
 $S branch resume itb >/dev/null 2>&1
 assert_eq "branch resumes" "$(sudo docker inspect -f '{{.State.Status}}' vec-itb 2>/dev/null)" "running"
+$S branch suspend main >/dev/null 2>&1
+assert_eq "suspending main is refused" "$?" "1"
+assert_eq "main keeps running" "$(sudo docker inspect -f '{{.State.Status}}' vec-main 2>/dev/null)" "running"
 
 echo "### 5. agent branch API"
 RESP="$(curl -sk -H "$AUTH" -X POST https://localhost:8088/agents/itest/branch)"
@@ -58,13 +63,36 @@ psql "$DSN" -c "CREATE TABLE a(x int); INSERT INTO a VALUES (7);" >/dev/null 2>&
 assert_eq "agent DB is usable via its DSN" "$(psql "$DSN" -tAc 'SELECT x FROM a' 2>/dev/null)" "7"
 curl -sk -H "$AUTH" -X DELETE https://localhost:8088/agents/itest/branch >/dev/null
 
-echo "### 6. HA: replication + failover"
+echo "### 6. HA: replication + failover + failback"
 $S ha enable >/dev/null 2>&1; sleep 2
 assert_eq "standby is streaming" "$(pg vec-main "SELECT count(*) FROM pg_stat_replication WHERE state='streaming'")" "1"
 $S ha failover >/dev/null 2>&1; sleep 3
 W="$(PGPASSWORD="$KEY" psql "$GATEWAY/main" -tAqc "INSERT INTO pit VALUES (99) RETURNING 'okwrite'" 2>&1 | head -1)"
 assert_eq "write succeeds via gateway after failover" "$W" "okwrite"
-$S ha disable >/dev/null 2>&1; $S up >/dev/null 2>&1; sleep 3
+# After a failover the promoted standby is the only primary: nothing may delete or stop it.
+for a in enable disable failover; do
+  $S ha "$a" >/dev/null 2>&1
+  assert_eq "ha $a is refused after a failover" "$?" "1"
+done
+$S branch suspend standby >/dev/null 2>&1
+assert_eq "suspending the promoted standby is refused" "$?" "1"
+assert_eq "promoted standby still running" "$(sudo docker inspect -f '{{.State.Status}}' vec-standby 2>/dev/null)" "running"
+# `vdb stop` removes containers; `vdb up` must bring the promoted standby back, not the old main.
+sudo docker rm -f vec-standby >/dev/null 2>&1
+$S up >/dev/null 2>&1; sleep 2
+assert_eq "up recreates the promoted standby" "$(sudo docker inspect -f '{{.State.Status}}' vec-standby 2>/dev/null)" "running"
+assert_eq "up leaves the old main stopped" "$(sudo docker inspect -f '{{.State.Status}}' vec-main 2>/dev/null)" "exited"
+assert_eq "the post-failover write is on the standby" "$(pg vec-standby 'SELECT count(*) FROM pit WHERE id=99')" "1"
+$S ha failback >/tmp/failback.log 2>&1
+assert_eq "ha failback exits 0" "$?" "0"
+assert_eq "main is primary again (not in recovery)" "$(pg vec-main 'SELECT pg_is_in_recovery()')" "f"
+assert_eq "primary pointer is back on main" "$(cat "$HOME/.vectoradb/primary" 2>/dev/null)" "main"
+assert_eq "failback kept the post-failover write" "$(pg vec-main 'SELECT count(*) FROM pit WHERE id=99')" "1"
+assert_eq "old standby removed" "$(sudo docker ps -aq --filter 'name=^vec-standby$' | wc -l | tr -d ' ')" "0"
+W="$(PGPASSWORD="$KEY" psql "$GATEWAY/main" -tAqc "INSERT INTO pit VALUES (100) RETURNING 'okwrite'" 2>&1 | head -1)"
+assert_eq "gateway writes to main after failback" "$W" "okwrite"
+pg vec-main "SELECT pg_switch_wal()" >/dev/null; sleep 5
+assert_eq "main archives WAL again" "$(pg vec-main 'SELECT archived_count > 0 AND last_failed_wal IS NULL FROM pg_stat_archiver')" "t"
 
 echo "### 7. regression: reaper never suspends the standby"
 $S ha enable >/dev/null 2>&1; sleep 2
@@ -133,12 +161,35 @@ assert_eq "camelCase column preserved (userId, not userid)" "$(pg vec-faithtest 
 assert_eq "nested array kept as jsonb" "$(pg vec-faithtest "SELECT data_type FROM information_schema.columns WHERE table_schema='raw' AND table_name='leaseAiChats' AND column_name='gallery'")" "jsonb"
 assert_eq "transform resolves the case-sensitive source" "$(pg vec-faithtest "SELECT count(*) FROM public.stg")" "1"
 
+echo "### 11. imports fail on bad input instead of reporting success"
+printf 'CREATE TABLE good(x int);\nINSERT INTO good VALUES (1),(2);\nINSERT INTO missing_table VALUES (1);\n' > /tmp/imp_bad.sql
+$S branch delete impbad >/dev/null 2>&1
+OUT="$($S import --from /tmp/imp_bad.sql --as impbad 2>&1)"
+assert_eq ".sql with a failing statement exits 1" "$?" "1"
+assert_eq "the failing statement is listed" "$(grep -c '1 statement(s) failed' <<<"$OUT")" "1"
+assert_eq "the rest of the dump still loaded" "$(pg vec-impbad 'SELECT count(*) FROM good')" "2"
+printf 'CREATE TABLE ok1(x int);\nINSERT INTO ok1 VALUES (1);\n' > /tmp/imp_ok.sql
+$S branch delete impok >/dev/null 2>&1
+$S import --from /tmp/imp_ok.sql --as impok >/dev/null 2>&1
+assert_eq "a clean .sql still imports (exit 0)" "$?" "0"
+printf '[{"a":1},{bad},{"a":3}]' > /tmp/imp_bad.json
+$S branch delete jsonbad >/dev/null 2>&1
+OUT="$($S import --from /tmp/imp_bad.json --as jsonbad 2>&1)"
+assert_eq "JSON array with an invalid element exits 1" "$?" "1"
+assert_eq "the invalid element is named" "$(grep -c 'element 2 is not valid JSON' <<<"$OUT")" "1"
+printf '[{"a":1},{"a":2}]' > /tmp/imp_ok.json
+$S branch delete jsonok >/dev/null 2>&1
+$S import --from /tmp/imp_ok.json --as jsonok >/dev/null 2>&1
+assert_eq "a valid JSON array still imports (exit 0)" "$?" "0"
+
 echo "### cleanup"
 $S branch delete itb >/dev/null 2>&1
 $S branch delete etltest >/dev/null 2>&1
 $S branch delete etlfail >/dev/null 2>&1
 $S branch delete faithtest >/dev/null 2>&1
 sudo docker rm -f mongo-src >/dev/null 2>&1
+for b in impbad impok jsonbad jsonok; do $S branch delete "$b" >/dev/null 2>&1; done
+rm -f /tmp/imp_bad.sql /tmp/imp_ok.sql /tmp/imp_bad.json /tmp/imp_ok.json /tmp/failback.log
 
 echo
 echo "==== ${PASS} passed, ${FAIL} failed ===="

@@ -81,7 +81,7 @@ Blackbox — the database's record of every schema change (RECORD layer; vdb led
   blackbox sessions [branch]      Agent sessions: agent, task, parent session, entries (--limit N)
   blackbox diff <a> <b>           Changes on each branch since they split, and objects both changed (--json)
   blackbox branch-before <id>     New branch of main as it was just before entry <id> (--as name)
-  blackbox revert --to <ts>       Time-travel revert of a branch's schema+data to a moment
+  blackbox revert --to <ts>       Point-in-time restore of main into a disposable container on :5433 (same as vdb restore)
 
 Blackbox policy gate — checks every schema change before it runs (docs/policy-errors.md):
   policy [list] [--branch b]      Show the rules: action (warn|block) and whether enabled
@@ -112,6 +112,7 @@ High availability:
   ha status            Show replication status (primary + standby)
   ha failover          Promote the standby to primary (reroutes 'main')
   ha disable           Remove the standby
+  ha failback          After a failover: move 'main' back to its own container, keeping every write
 
 Serverless front door:
   gateway [--addr :6432] [--idle 2m]
@@ -388,7 +389,7 @@ func pipelineCmd(args []string) {
 }
 
 // ledgerCmd handles `vdb ledger [branch] [--limit N]` and
-// `vdb ledger revert --to <ts>` (time-travel restore of the branch's schema+data).
+// `vdb ledger revert --to <ts>` (a point-in-time restore of main, like `vdb restore`).
 func ledgerCmd(args []string) {
 	if ledgerV2Cmd(args) { // checkpoint, integrity, export
 		return
@@ -399,8 +400,10 @@ func ledgerCmd(args []string) {
 			fmt.Println("usage: vdb ledger revert --to '<timestamp>'|latest")
 			os.Exit(2)
 		}
-		fmt.Println("Reverting via time-travel restore (disposable container on :5433)…")
+		fmt.Println("Restoring main to that moment in a disposable container on :5433 (the same as `vdb restore`).")
+		fmt.Println("Nothing is reverted: main and every branch stay as they are.")
 		must(branch.Restore(ts))
+		fmt.Println("For a branch holding main as it was just before a specific change: vdb blackbox branch-before <entry id>  (ids: vdb blackbox entries)")
 		return
 	}
 	if len(args) > 0 && args[0] == "upgrade" {
@@ -510,7 +513,7 @@ func branchCmd(args []string) {
 // haCmd dispatches `vdb ha <subcommand>`.
 func haCmd(args []string) {
 	if len(args) == 0 {
-		fmt.Println("usage: vdb ha <enable|status|failover|disable>")
+		fmt.Println("usage: vdb ha <enable|status|failover|disable|failback>")
 		os.Exit(2)
 	}
 	switch args[0] {
@@ -522,6 +525,8 @@ func haCmd(args []string) {
 		must(branch.HAFailover())
 	case "disable":
 		must(branch.HADisable())
+	case "failback":
+		must(branch.HAFailback())
 	default:
 		fmt.Printf("unknown ha subcommand: %s\n", args[0])
 		os.Exit(2)

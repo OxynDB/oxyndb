@@ -227,7 +227,7 @@ vdb branch delete qa
 ```bash
 vdb blackbox [branch] [--limit N] # captured DDL — attributed and policy-checked
 vdb blackbox verify [branch]    # verify the tamper-evident hash chain
-vdb blackbox revert --to <ts>   # time-travel a branch's schema+data to a moment
+vdb blackbox revert --to <ts>   # point-in-time restore of main on :5433 (like vdb restore)
 ```
 
 **Durability / time travel**
@@ -246,6 +246,7 @@ vdb ha enable                   # hot standby streaming from main
 vdb ha status
 vdb ha failover                 # promote the standby; 'main' reroutes to it
 vdb ha disable
+vdb ha failback                 # after a failover: back to main's own container, keeping every write
 ```
 
 **Accounts & keys**

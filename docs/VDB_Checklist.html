@@ -103,7 +103,7 @@
   <div class="meta">
     <b>What this is:</b> every VectoraDB feature and its sub-features — built or not, and how it was tested — so it's clear where we are and what's next.
     How each feature works is in <code>VDB_Feature_Implemented.pdf</code> (same ids).<br>
-    <b>Last updated:</b> 15 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>2bc87ff</code> (after v0.8.2: <code>vdb update</code>)<br>
+    <b>Last updated:</b> 15 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>6a06175</code> + safety fixes batch 1 (<code>fix/safety-batch1</code>)<br>
     <b>Source:</b> <code>docs/VDB_Checklist.html</code> → <code>make feature-doc</code> → this PDF
   </div>
 
@@ -136,7 +136,7 @@
   <h2>Suggested next steps</h2>
   <ol class="next">
     <li>Run <code>vdb update</code> against a real release on macOS and Windows (A9) — cut v0.9.0, install it, then update to v0.9.1.</li>
-    <li>Fix the known safety hazards: <code>vdb branch suspend main</code> (C3), <code>vdb ha enable</code> after a failover (D4), <code>vdb ledger revert --to</code> (H7).</li>
+    <li>HA beyond the demo: archive WAL while main runs on the promoted standby, then automatic failover and fencing (D4). <i>(Safety fixes C3, D4 hazards, H7, I5, I6 done.)</i></li>
     <li>Verify downloads everywhere: installers and <code>vdb setup</code>'s engine download still skip <code>SHA256SUMS</code> (A1, A2, A7).</li>
     <li>Check the web pages that were built but never used signed in: Integrity, Policies, sidebar (L8–L10); add Blackbox filters (L5); refresh Guide/Docs (L7).</li>
     <li>Add automated tests where there are none: imports (I1–I3, I5, I7, I8), SDKs (K3, K4), web UI (L*); bring the OpenAPI spec in line (K2).</li>
@@ -214,8 +214,8 @@
     <tr data-id="C2" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">C2</td><td><b>Branch lifecycle</b><ul class="subs">
       <li class="ok">Create, list, delete</li><li class="ok">Reset to parent</li><li class="ok">Suspend / resume</li>
       <li class="ok">Recreate a container from its surviving data</li><li class="todo">Name validation in the CLI</li></ul></td><td class="tb">Unit; VM §2, §4</td></tr>
-    <tr data-id="C3" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">C3</td><td><b>Protection of <code>main</code></b><ul class="subs">
-      <li class="ok">Delete and reset refused</li><li class="bad">Suspend main is allowed and the gateway won't wake it</li></ul></td><td class="tb">Manual</td></tr>
+    <tr data-id="C3" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">C3</td><td><b>Protection of <code>main</code></b><ul class="subs">
+      <li class="ok">Delete and reset refused</li><li class="ok">Suspend refused for main, the HA standby and whichever container serves main</li></ul></td><td class="tb">Unit; VM §4, §6</td></tr>
     <tr data-id="C4" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">C4</td><td><b>Private networking (no host ports)</b><ul class="subs">
       <li class="ok">Branch databases reachable only through the gateway</li><li class="part">Exceptions: restore :5433, standby, MinIO</li></ul></td><td class="tb">Unit (<code>TestParsePublishedPort</code>, <code>TestDSN</code>)</td></tr>
     <tr data-id="C5" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">C5</td><td><b>Scale-to-zero &amp; wake on connect</b><ul class="subs">
@@ -246,7 +246,9 @@
       <li class="todo">Use a base backup older than the latest</li></ul></td><td class="tb">VM §3; v2 §1a</td></tr>
     <tr data-id="D4" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">D4</td><td><b>HA standby &amp; failover</b><ul class="subs">
       <li class="ok">Streaming hot standby</li><li class="ok">Manual failover, <code>main</code> rerouted</li>
-      <li class="bad"><code>ha enable</code> after a failover wipes the live primary</li><li class="todo">Automatic failover, fencing, multi-host</li></ul></td><td class="tb">VM §6, §7</td></tr>
+      <li class="ok">Nothing deletes or stops the promoted standby</li><li class="ok"><code>vdb up</code> brings it back, not the old main</li>
+      <li class="ok"><code>vdb ha failback</code>, keeping every write</li><li class="part">No WAL archiving while main runs on the standby</li>
+      <li class="todo">Automatic failover, fencing, multi-host</li></ul></td><td class="tb">Unit; VM §6, §7</td></tr>
   </table>
 </section>
 
@@ -329,8 +331,8 @@
       <li class="todo">Automated test</li></ul></td><td class="tb">Manual</td></tr>
     <tr data-id="H6" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">H6</td><td><b>Blackbox access (CLI / REST / MCP / UI / SDK)</b><ul class="subs">
       <li class="ok">CLI, REST with filters, MCP, web page, SDKs</li><li class="todo">Per-user access control</li></ul></td><td class="tb">v2 §0, §5</td></tr>
-    <tr data-id="H7" data-st="bad"><td class="c"><i class="ck bad"></i></td><td class="id">H7</td><td><b><code>vdb ledger revert --to</code></b><ul class="subs">
-      <li class="bad">Doesn't revert a branch (runs PITR of main)</li><li class="ok">Real alternative built: H13</li></ul></td><td class="tb">Same as D3</td></tr>
+    <tr data-id="H7" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">H7</td><td><b><code>vdb ledger revert --to</code></b><ul class="subs">
+      <li class="ok">Help and output say it's a point-in-time restore of main</li><li class="ok">Points to H13 for a branch from before a change</li></ul></td><td class="tb">Unit (help text); VM §3 (the restore)</td></tr>
     <tr data-id="H8" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">H8</td><td><b>Override permission (vdb_admin) &amp; upgrade</b><ul class="subs">
       <li class="ok"><code>vdb admin grant|revoke|list</code></li><li class="ok">First user granted automatically</li>
       <li class="ok"><code>vdb blackbox upgrade [--all]</code></li></ul></td><td class="tb">v2 §1b</td></tr>
@@ -381,10 +383,11 @@
       <li class="todo">Other indexes, foreign keys, defaults</li><li class="todo">Automated test</li></ul></td><td class="tb">Manual</td></tr>
     <tr data-id="I4" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">I4</td><td><b>From MongoDB</b><ul class="subs">
       <li class="ok">Collection → typed table, exact name</li><li class="ok">Nested objects / arrays kept as jsonb</li></ul></td><td class="tb">VM §9, §10</td></tr>
-    <tr data-id="I5" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">I5</td><td><b>From a .sql dump</b><ul class="subs">
-      <li class="ok">Runs the dump into a new branch</li><li class="todo">Stop on the first failing statement</li><li class="todo">Automated test</li></ul></td><td class="tb">Manual</td></tr>
-    <tr data-id="I6" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">I6</td><td><b>From JSON / NDJSON</b><ul class="subs">
-      <li class="ok">Columns inferred from top-level keys</li><li class="todo">Report a bad element in a JSON array (stops silently)</li></ul></td><td class="tb">Unit; VM §10</td></tr>
+    <tr data-id="I5" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">I5</td><td><b>From a .sql dump</b><ul class="subs">
+      <li class="ok">Runs the dump into a new branch</li><li class="ok">Fails listing every failed statement (instance kept)</li>
+      <li class="ok">Same for Postgres imports (I1)</li><li class="ok">Automated test</li></ul></td><td class="tb">Unit; VM §11</td></tr>
+    <tr data-id="I6" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">I6</td><td><b>From JSON / NDJSON</b><ul class="subs">
+      <li class="ok">Columns inferred from top-level keys</li><li class="ok">An invalid document fails the import, naming its element or line</li></ul></td><td class="tb">Unit; VM §10, §11</td></tr>
     <tr data-id="I7" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">I7</td><td><b>From CSV</b><ul class="subs">
       <li class="ok">Table from the header, exact column names</li><li class="todo">Typed columns (all text today)</li></ul></td><td class="tb">Manual</td></tr>
     <tr data-id="I8" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">I8</td><td><b>Continuous replication &amp; cutover</b><ul class="subs">

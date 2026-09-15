@@ -3,9 +3,23 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
+
+// The help must say what `blackbox revert` really does (a point-in-time restore
+// of main), not promise to revert a branch; and list `ha failback`.
+func TestUsageDescribesRevertAndFailback(t *testing.T) {
+	if strings.Contains(usage, "revert of a branch") {
+		t.Error("usage still claims revert reverts a branch")
+	}
+	for _, want := range []string{"Point-in-time restore of main", "ha failback"} {
+		if !strings.Contains(usage, want) {
+			t.Errorf("usage lacks %q", want)
+		}
+	}
+}
 
 func TestAddrFlag(t *testing.T) {
 	if got := addrFlag([]string{"--addr", ":9999"}, ":6432"); got != ":9999" {

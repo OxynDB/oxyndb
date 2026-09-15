@@ -312,7 +312,9 @@ func loadPostgres(p *Progress, target, dsn string) error {
 	p.Logf("  running pg_dump | psql (schema + data)…\n")
 	script := fmt.Sprintf("set -euo pipefail; pg_dump %s --no-owner --no-acl --no-comments | psql -q -U %s -d %s",
 		shellQuote(dsn), pgUser, pgDatabase)
-	return run("docker", "exec", "-e", pgImportOptions, container(target), "bash", "-c", script)
+	// psql exits 0 even when statements fail, so its errors are counted instead.
+	c, err := runCollectingErrors(nil, "docker", "exec", "-e", pgImportOptions, container(target), "bash", "-c", script)
+	return c.failure(target, err)
 }
 
 // loadMySQL migrates a MySQL/MariaDB source using pgloader (schema + data + type
@@ -701,7 +703,83 @@ func jsStr(s string) string { b, _ := json.Marshal(s); return string(b) }
 
 func loadSQL(p *Progress, target string, r io.Reader) error {
 	p.Logf("  running the .sql dump through psql…\n")
-	return pipeInto(target, r, "psql", "-q", "-U", pgUser, "-d", pgDatabase)
+	// The whole dump runs; statements that failed make the import fail afterwards.
+	c, err := runCollectingErrors(r, "docker", "exec", "-i", "-e", pgImportOptions, container(target),
+		"psql", "-q", "-U", pgUser, "-d", pgDatabase)
+	return c.failure(target, err)
+}
+
+// psqlErrorsShown caps how many failed statements an import error lists.
+const psqlErrorsShown = 20
+
+// psqlErrorCollector is an io.Writer for psql's stderr that keeps its ERROR and
+// FATAL lines: how many there were and the first psqlErrorsShown of them.
+type psqlErrorCollector struct {
+	partial []byte
+	count   int
+	first   []string
+}
+
+func (c *psqlErrorCollector) Write(b []byte) (int, error) {
+	c.partial = append(c.partial, b...)
+	for {
+		s := string(c.partial)
+		i := strings.IndexByte(s, '\n')
+		if i < 0 {
+			break
+		}
+		c.line(s[:i])
+		c.partial = c.partial[i+1:]
+	}
+	return len(b), nil
+}
+
+// flush handles a last line without a newline.
+func (c *psqlErrorCollector) flush() {
+	if len(c.partial) > 0 {
+		c.line(string(c.partial))
+		c.partial = nil
+	}
+}
+
+func (c *psqlErrorCollector) line(l string) {
+	if !strings.Contains(l, "ERROR:") && !strings.Contains(l, "FATAL:") {
+		return // NOTICE, WARNING, and the LINE/DETAIL/HINT context around an error
+	}
+	c.count++
+	if len(c.first) < psqlErrorsShown {
+		c.first = append(c.first, strings.TrimSpace(l))
+	}
+}
+
+// failure is the import's result: an error listing the failed statements if
+// there were any, else the command's own error.
+func (c *psqlErrorCollector) failure(target string, runErr error) error {
+	if c.count == 0 {
+		return runErr
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d statement(s) failed — the rest loaded, and instance %q is kept so you can inspect it:", c.count, target)
+	for _, e := range c.first {
+		b.WriteString("\n  " + e)
+	}
+	if c.count > len(c.first) {
+		fmt.Fprintf(&b, "\n  … and %d more", c.count-len(c.first))
+	}
+	return fmt.Errorf("%s", b.String())
+}
+
+// runCollectingErrors runs a privileged command like run (output shown), with
+// stdin r, and collects the psql errors it printed.
+func runCollectingErrors(r io.Reader, name string, args ...string) (*psqlErrorCollector, error) {
+	c := &psqlErrorCollector{}
+	cmd := exec.Command("sudo", append([]string{name}, args...)...)
+	cmd.Stdin = r
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = io.MultiWriter(os.Stderr, c)
+	err := cmd.Run()
+	c.flush()
+	return c, err
 }
 
 func loadCSV(p *Progress, target string, r io.Reader, table string) error {
@@ -753,40 +831,82 @@ func loadJSON(p *Progress, target string, r io.Reader, table string) error {
 		return psqlExec(target, fmt.Sprintf(`DROP TABLE IF EXISTS %s; CREATE TABLE %s (doc jsonb);`, qstage, qtable))
 	}
 	pr, pw := io.Pipe()
+	streamErr := make(chan error, 1)
 	go func() {
 		defer pw.Close()
 		w := bufio.NewWriter(pw)
 		fmt.Fprintln(w, "BEGIN;")
-		emit := func(raw string) {
-			if raw = strings.TrimSpace(raw); raw != "" {
-				fmt.Fprintf(w, `INSERT INTO %s(doc) VALUES ('%s'::jsonb);`+"\n", qstage, strings.ReplaceAll(raw, "'", "''"))
-			}
+		err := streamJSONDocs(br, first, func(raw string) error {
+			_, werr := fmt.Fprintf(w, `INSERT INTO %s(doc) VALUES ('%s'::jsonb);`+"\n", qstage, strings.ReplaceAll(raw, "'", "''"))
+			return werr
+		})
+		if err != nil {
+			fmt.Fprintln(w, "ROLLBACK;") // an invalid document: nothing from this source is kept
+		} else {
+			fmt.Fprintln(w, "COMMIT;")
 		}
-		if first == '[' { // a JSON array
-			dec := json.NewDecoder(br)
-			dec.Token() // consume '['
-			for dec.More() {
-				var m json.RawMessage
-				if dec.Decode(&m) != nil {
-					break
-				}
-				emit(string(m))
-			}
-		} else { // newline-delimited JSON (e.g. mongoexport)
-			sc := bufio.NewScanner(br)
-			sc.Buffer(make([]byte, 1<<20), 64<<20)
-			for sc.Scan() {
-				emit(sc.Text())
-			}
-		}
-		fmt.Fprintln(w, "COMMIT;")
 		w.Flush()
+		streamErr <- err
 	}()
 	p.Logf("  loading documents…\n")
-	if err := pipeInto(target, pr, "psql", "-q", "-U", pgUser, "-d", pgDatabase, "-v", "ON_ERROR_STOP=1"); err != nil {
-		return err
+	runErr := pipeInto(target, pr, "psql", "-q", "-U", pgUser, "-d", pgDatabase, "-v", "ON_ERROR_STOP=1")
+	pr.Close() // if psql stopped early, the writer's next write fails instead of blocking
+	sErr := <-streamErr
+	if runErr != nil {
+		return runErr
+	}
+	if sErr != nil {
+		return sErr
 	}
 	return relationalizeJSON(p, target, stage, table)
+}
+
+// streamJSONDocs reads a JSON array or newline-delimited JSON from br (first is
+// its first non-space byte) and passes each document to emit. An invalid document
+// is an error naming its position, so a bad file never imports partially.
+func streamJSONDocs(br *bufio.Reader, first byte, emit func(string) error) error {
+	if first == '[' { // a JSON array
+		dec := json.NewDecoder(br)
+		if _, err := dec.Token(); err != nil { // consume '['
+			return fmt.Errorf("reading the JSON array: %v", err)
+		}
+		n := 0
+		for dec.More() {
+			n++
+			var m json.RawMessage
+			if err := dec.Decode(&m); err != nil {
+				return fmt.Errorf("JSON array element %d is not valid JSON: %v", n, err)
+			}
+			if err := emit(string(m)); err != nil {
+				return err
+			}
+		}
+		if _, err := dec.Token(); err != nil { // consume ']'
+			return fmt.Errorf("the JSON array isn't closed after element %d: %v", n, err)
+		}
+		return nil
+	}
+	// newline-delimited JSON (e.g. mongoexport)
+	sc := bufio.NewScanner(br)
+	sc.Buffer(make([]byte, 1<<20), 64<<20)
+	line := 0
+	for sc.Scan() {
+		line++
+		raw := strings.TrimSpace(sc.Text())
+		if raw == "" {
+			continue
+		}
+		if !json.Valid([]byte(raw)) {
+			return fmt.Errorf("line %d is not valid JSON", line)
+		}
+		if err := emit(raw); err != nil {
+			return err
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return fmt.Errorf("reading line %d: %v", line+1, err)
+	}
+	return nil
 }
 
 // psqlExec runs a (possibly multi-statement) SQL string on an instance. The first
