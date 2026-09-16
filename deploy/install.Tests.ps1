@@ -76,30 +76,32 @@ Describe 'installer is independent of WSL' {
 # Windows PowerShell 5.1 read non-ASCII as ANSI and fail to parse the file.
 # Pure ASCII with no BOM is the only encoding that satisfies both.
 Describe 'VectoraDB release verification' {
+    # Dot-sourcing loads the installer's functions without running it, as every
+    # other block here does. The listing is primed through the same script-scoped
+    # cache Get-VdbSums fills, so these exercise the real lookup rather than a mock.
     BeforeAll {
-        $script:sums = @"
-$('a' * 64)  vdb-windows-amd64.exe
-$('b' * 64) *vectoradb-distro.tar.gz
-"@
+        . "$PSScriptRoot/install.ps1"
+        $script:listing = ('a' * 64) + "  vdb-windows-amd64.exe`n" + ('b' * 64) + " *vectoradb-distro.tar.gz`n"
     }
+    BeforeEach {
+        $env:VDB_NO_VERIFY = $null
+        Set-Variable -Name VdbSums -Scope Script -Value $script:listing
+    }
+    AfterAll { $env:VDB_NO_VERIFY = $null }
 
     It 'reads a checksum from the release listing' {
-        Mock Get-VdbSums { $script:sums }
         Get-VdbChecksum 'vdb-windows-amd64.exe' | Should -Be ('a' * 64)
     }
 
     It 'accepts the binary-mode "*name" form' {
-        Mock Get-VdbSums { $script:sums }
         Get-VdbChecksum 'vectoradb-distro.tar.gz' | Should -Be ('b' * 64)
     }
 
     It 'refuses an asset the listing does not name' {
-        Mock Get-VdbSums { $script:sums }
         { Get-VdbChecksum 'vdb-linux-amd64' } | Should -Throw '*not listed in SHA256SUMS*'
     }
 
     It 'deletes a file whose checksum does not match and stops the install' {
-        Mock Get-VdbSums { $script:sums }
         $f = Join-Path $TestDrive 'vdb-windows-amd64.exe'
         Set-Content -Path $f -Value 'not the real binary' -NoNewline
         { Assert-VdbChecksum $f 'vdb-windows-amd64.exe' } | Should -Throw '*checksum mismatch*'
@@ -110,24 +112,20 @@ $('b' * 64) *vectoradb-distro.tar.gz
         $f = Join-Path $TestDrive 'ok.bin'
         Set-Content -Path $f -Value 'contents' -NoNewline
         $hash = (Get-FileHash -Algorithm SHA256 -Path $f).Hash.ToLower()
-        Mock Get-VdbSums { "$hash  ok.bin" }
+        Set-Variable -Name VdbSums -Scope Script -Value "$hash  ok.bin"
         { Assert-VdbChecksum $f 'ok.bin' } | Should -Not -Throw
         Test-Path $f | Should -BeTrue
     }
 
     It 'skips verification when VDB_NO_VERIFY=1' {
-        $old = $env:VDB_NO_VERIFY
-        try {
-            $env:VDB_NO_VERIFY = '1'
-            $f = Join-Path $TestDrive 'skip.bin'
-            Set-Content -Path $f -Value 'whatever' -NoNewline
-            Get-VdbChecksum 'anything' | Should -BeNullOrEmpty
-            { Assert-VdbChecksum $f 'anything' } | Should -Not -Throw
-        } finally { $env:VDB_NO_VERIFY = $old }
+        $env:VDB_NO_VERIFY = '1'
+        $f = Join-Path $TestDrive 'skip.bin'
+        Set-Content -Path $f -Value 'whatever' -NoNewline
+        Get-VdbChecksum 'anything' | Should -BeNullOrEmpty
+        { Assert-VdbChecksum $f 'anything' } | Should -Not -Throw
     }
 
     It 'treats an unverifiable staged copy as unusable' {
-        Mock Get-VdbSums { $script:sums }
         $f = Join-Path $TestDrive 'stale.tar.gz'
         Set-Content -Path $f -Value 'stale' -NoNewline
         Test-VdbChecksum $f 'vectoradb-distro.tar.gz' | Should -BeFalse
