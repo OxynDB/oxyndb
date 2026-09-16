@@ -294,9 +294,14 @@ Give each agent its own instant, disposable database — over HTTP:
 ```bash
 vdb serve --addr :8088          # the Agent Branch API
 curl -k -H "Authorization: Bearer $VDB_KEY" -X POST https://localhost:8088/agents/alice/branch
-# -> { "dsn": "postgresql://…", … }   the agent connects to that dsn
+# -> { "dsn": "postgresql://agent-alice:vdb_…@localhost:6432/agent-alice?sslmode=require", … }
 curl -k -H "Authorization: Bearer $VDB_KEY" -X DELETE https://localhost:8088/agents/alice/branch
 ```
+
+The agent connects with that DSN — through the gateway, so it works from your
+machine as well as inside the VM. Its password is an API key **scoped to that
+one branch**: it opens no other branch, and the control plane and this API both
+refuse it. Deleting the branch revokes the key.
 
 …or over the **Model Context Protocol**, so an agent framework drives it through
 one standard interface:

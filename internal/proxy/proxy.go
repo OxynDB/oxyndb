@@ -63,6 +63,10 @@ func touch(name string) {
 // this before forwarding to the backend.
 const realDatabase = "vectoradb"
 
+// scopeAllows reports whether a key may open target: an unscoped key opens any
+// branch, a scoped one only the branch it names.
+func scopeAllows(scope, target string) bool { return scope == "" || scope == target }
+
 // realUser is the Postgres role the Gateway logs clients in as — a non-superuser
 // role, so client sessions obey RLS/GRANTs and cannot bypass the append-only
 // ledger. The API key gates the client; this role bounds what they can do.
@@ -212,24 +216,34 @@ func handle(client net.Conn) {
 
 	// Gateway authentication: the client's password must be a valid API key.
 	// The authenticated identity becomes the ledger "actor" for this session.
-	var actor string
+	var actor, keyScope string
 	if authStore != nil {
 		key, err := requestClientPassword(client)
 		if err != nil {
 			log.Printf("gateway auth: %v", err)
 			return
 		}
-		u, ok := authStore.VerifyKey(key)
+		u, scope, ok := authStore.VerifyKey(key)
 		if !ok {
 			sendError(client, "28P01", "invalid API key — use a vdb_ key as the password")
 			return
 		}
-		actor = u.Email
+		actor, keyScope = u.Email, scope
 	}
 
 	target := params["database"]
 	if target == "" {
 		target = "main"
+	}
+	// A branch-scoped key (an agent's) opens its own branch and nothing else.
+	// Checked before the branch is touched, so such a key cannot even wake
+	// another branch, and the actor recorded is the agent, not the key's owner.
+	if keyScope != "" {
+		if !scopeAllows(keyScope, target) {
+			sendError(client, "42501", fmt.Sprintf("this key only opens branch %q", keyScope))
+			return
+		}
+		actor = keyScope
 	}
 	touch(target)
 	if st := branch.ContainerState(target); st != "running" && st != "absent" {
@@ -258,7 +272,16 @@ func handle(client net.Conn) {
 	// actor — attribution becomes non-forgeable. Fall back to the shared role if
 	// the per-user role can't be provisioned.
 	loginUser := realUser
-	if actor != "" {
+	backendPass := backendPassword()
+	switch {
+	case keyScope != "":
+		// The branch's own agent role. Its password is derived from the install
+		// secret (branch.AgentRolePassword), so session_user is the agent and the
+		// attribution cannot be forged. Deliberately not EnsureUserRole: that
+		// would reset this role's password and break the DSN already issued.
+		loginUser = keyScope
+		backendPass = branch.AgentRolePassword(keyScope)
+	case actor != "":
 		if err := branch.EnsureUserRole(target, actor); err != nil {
 			log.Printf("per-user role %q on %s: %v (using %s)", actor, target, err, realUser)
 		} else {
@@ -270,7 +293,7 @@ func handle(client net.Conn) {
 	// branch's DDL event triggers read via current_setting('vectoradb.*'). For a
 	// per-user login this is a fallback/display value; session_user is authoritative.
 	params["options"] = ledgerOptions(params["options"], actor, target)
-	if err := backendAuth(backend, params); err != nil {
+	if err := backendAuth(backend, params, backendPass); err != nil {
 		log.Printf("backend auth %s: %v", addr, err)
 		sendError(client, "08006", fmt.Sprintf("branch %q authentication failed", target))
 		return

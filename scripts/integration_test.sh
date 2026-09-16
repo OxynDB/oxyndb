@@ -62,6 +62,9 @@ DSN="$(echo "$RESP" | jget dsn)"
 psql "$DSN" -c "CREATE TABLE a(x int); INSERT INTO a VALUES (7);" >/dev/null 2>&1
 assert_eq "agent DB is usable via its DSN" "$(psql "$DSN" -tAc 'SELECT x FROM a' 2>/dev/null)" "7"
 curl -sk -H "$AUTH" -X DELETE https://localhost:8088/agents/itest/branch >/dev/null
+# The DSN carries a key scoped to that branch, and deleting the branch revokes it.
+assert_eq "the agent's key dies with its branch" \
+  "$(psql "$DSN" -tAc 'SELECT 1' 2>&1 | grep -c 'invalid API key')" "1"
 
 echo "### 6. HA: replication + failover + failback"
 $S ha enable >/dev/null 2>&1; sleep 2
