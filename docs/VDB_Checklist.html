@@ -103,7 +103,7 @@
   <div class="meta">
     <b>What this is:</b> every VectoraDB feature and its sub-features — built or not, and how it was tested — so it's clear where we are and what's next.
     How each feature works is in <code>VDB_Feature_Implemented.pdf</code> (same ids).<br>
-    <b>Last updated:</b> 16 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>c71ce45</code> (v0.8.5) + download integrity (<code>fix/download-integrity</code>)<br>
+    <b>Last updated:</b> 16 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>c71ce45</code> (v0.8.5) + docs &amp; API accuracy (<code>docs/api-accuracy</code>)<br>
     <b>Source:</b> <code>docs/VDB_Checklist.html</code> → <code>make feature-doc</code> → this PDF
   </div>
 
@@ -138,8 +138,8 @@
     <li>Run <code>vdb update</code> against a real release on macOS and Windows (A9) — cut v0.9.0, install it, then update to v0.9.1.</li>
     <li>HA beyond the demo: archive WAL while main runs on the promoted standby, then automatic failover and fencing (D4). <i>(Safety fixes C3, D4 hazards, H7, I5, I6 done.)</i></li>
     <li>Verify downloads everywhere: installers and <code>vdb setup</code>'s engine download still skip <code>SHA256SUMS</code> (A1, A2, A7).</li>
-    <li>Check the web pages that were built but never used signed in: Integrity, Policies, sidebar (L8–L10); add Blackbox filters (L5); refresh Guide/Docs (L7).</li>
-    <li>Add automated tests where there are none: imports (I1–I3, I5, I7, I8), SDKs (K3, K4), web UI (L*); bring the OpenAPI spec in line (K2).</li>
+    <li>Check the web pages that were built but never used signed in: Integrity, Policies, sidebar (L8–L10); add Blackbox filters (L5).</li>
+    <li>Add automated tests where there are none: imports (I1–I3, I5, I7, I8), SDKs (K3, K4), web UI (L*).</li>
     <li>Run the VM integration suites in CI (M2).</li>
   </ol>
   <div class="foot">VDB_Checklist · overview</div>
@@ -433,8 +433,8 @@
     <tr><th></th><th>ID</th><th>Feature · sub-features</th><th>Tested by</th></tr>
     <tr data-id="K1" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">K1</td><td><b>Control-plane REST API</b><ul class="subs">
       <li class="ok">Branches, query, Blackbox, policy, impact, import, pipelines, keys</li><li class="todo">Versioned paths (<code>/api/v1</code>)</li></ul></td><td class="tb">Unit; VM §1; v2 §0–§8</td></tr>
-    <tr data-id="K2" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">K2</td><td><b>OpenAPI spec</b><ul class="subs">
-      <li class="ok">Served, Blackbox 2.0 endpoints documented</li><li class="todo">Match the code (import fields, status codes, missing routes)</li></ul></td><td class="tb">Manual</td></tr>
+    <tr data-id="K2" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">K2</td><td><b>OpenAPI spec</b><ul class="subs">
+      <li class="ok">Served, Blackbox 2.0 endpoints documented</li><li class="ok">Matches the code (import fields, status codes, auth routes, /blackbox aliases)</li><li class="ok">Drift check in CI</li></ul></td><td class="tb">Unit (drift check)</td></tr>
     <tr data-id="K3" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">K3</td><td><b>Python SDK</b><ul class="subs">
       <li class="ok">Branches, query, Blackbox</li><li class="todo">Import, pipelines, keys, agents</li><li class="todo">Tests</li><li class="todo">Publish to PyPI</li></ul></td><td class="tb">Manual</td></tr>
     <tr data-id="K4" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">K4</td><td><b>TypeScript SDK</b><ul class="subs">
@@ -444,7 +444,7 @@
       <li class="part">DSN only reachable inside the VM</li><li class="part">Cap and TTL count only running branches</li></ul></td><td class="tb">VM §5; v2 §1c, §7</td></tr>
     <tr data-id="K6" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">K6</td><td><b>MCP server</b><ul class="subs">
       <li class="ok">Branches, run_sql, Blackbox tools</li><li class="ok">policy_check, execute_change, impact, diff</li>
-      <li class="todo">Authentication</li><li class="todo">Client config snippet in docs</li></ul></td><td class="tb">Unit; v2 §1c–§8</td></tr>
+      <li class="todo">Authentication</li><li class="ok">Client config &amp; 16-tool reference (docs/mcp.md)</li></ul></td><td class="tb">Unit; v2 §1c–§8</td></tr>
   </table>
 </section>
 
@@ -465,8 +465,8 @@
       <li class="ok">Entries per branch with badges</li><li class="todo">Table / risk / date filters</li><li class="todo">Verify button, statement and session</li></ul></td><td class="tb">Manual</td></tr>
     <tr data-id="L6" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">L6</td><td><b>API keys page</b><ul class="subs">
       <li class="ok">Create, copy, list, revoke</li></ul></td><td class="tb">Manual</td></tr>
-    <tr data-id="L7" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">L7</td><td><b>Landing, Guide &amp; Docs pages</b><ul class="subs">
-      <li class="ok">Landing, developer guide, reference</li><li class="todo">Refresh stale content (https, sslmode, MCP, Blackbox, import routes)</li></ul></td><td class="tb">Manual</td></tr>
+    <tr data-id="L7" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">L7</td><td><b>Landing, Guide &amp; Docs pages</b><ul class="subs">
+      <li class="ok">Landing, developer guide, reference</li><li class="ok">Refreshed against the code (https, sslmode, MCP, Blackbox, import routes)</li></ul></td><td class="tb">Type-check + build</td></tr>
     <tr data-id="L8" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">L8</td><td><b>Blackbox integrity page</b><ul class="subs">
       <li class="ok">Verify, checkpoint, export, branch-before</li><li class="ok">Used signed in; every result matched the CLI</li>
       <li class="part">Entry list needs a refresh to show a new change</li></ul></td><td class="tb">Type-check + build; browser review 16 Sep</td></tr>

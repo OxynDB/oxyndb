@@ -305,6 +305,8 @@ one standard interface:
 vdb mcp                         # MCP server on stdio
 ```
 
+Client setup and the full tool reference: [docs/mcp.md](docs/mcp.md).
+
 MCP tools: `create_branch`, `run_sql`, `changes` (what did I change, from
 Blackbox), `verify_blackbox`, `list_branches`, `delete_branch`. DDL an agent runs is
 attributed to that agent automatically.

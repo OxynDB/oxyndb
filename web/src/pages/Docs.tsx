@@ -41,8 +41,9 @@ export default function Docs() {
       </table>
 
       <h2>REST API</h2>
-      <p className="muted">The control-plane API (default <code>http://localhost:8080</code>). Calls require a session
-        cookie or <code>Authorization: Bearer &lt;api-key&gt;</code>. Try the live ones:</p>
+      <p className="muted">The control-plane API (default <code>https://localhost:8080</code>). Calls require a session
+        cookie or <code>Authorization: Bearer &lt;api-key&gt;</code>. The full description is served at{' '}
+        <code>GET /api/openapi.yaml</code> — point a client generator at it. Try the live ones:</p>
       <div className="row">
         <button className="ghost" onClick={() => call('GET /api/status', getStatus)}>GET /api/status</button>
         <button className="ghost" onClick={() => call('GET /api/branches', getBranches)}>GET /api/branches</button>
@@ -58,7 +59,30 @@ export default function Docs() {
           <tr><td><code>DELETE /api/branches/{'{name}'}</code></td><td>Delete a branch</td></tr>
           <tr><td><code>POST /api/branches/{'{name}'}/suspend|resume</code></td><td>Suspend / resume</td></tr>
           <tr><td><code>POST /api/branches/{'{name}'}/query</code></td><td>Run SQL — {'{ "sql": "…" }'}</td></tr>
-          <tr><td><code>POST /agents/{'{id}'}/branch</code> · <code>DELETE …</code></td><td>Agent API (<code>:8088</code>) — create / destroy an agent database</td></tr>
+          <tr><td><code>GET /api/branches/{'{name}'}/ledger</code></td><td>Blackbox entries (filters: <code>actor</code>, <code>table</code>, <code>risk</code>, <code>status</code>, <code>kind</code>, <code>since</code>, <code>until</code>)</td></tr>
+          <tr><td><code>GET …/ledger/verify</code> · <code>…/integrity</code> · <code>…/export</code> · <code>…/entries</code> · <code>…/sessions</code></td><td>Verify the hash chain, check against anchors, export JSONL, list entries and agent sessions</td></tr>
+          <tr><td><code>POST …/ledger/checkpoint</code> · <code>POST …/ledger/{'{id}'}/branch</code></td><td>Anchor new entries; branch <code>main</code> from just before an entry</td></tr>
+          <tr><td className="muted" colSpan={2}>Every <code>…/ledger…</code> path is also served as <code>…/blackbox…</code></td></tr>
+          <tr><td><code>GET /api/branches/{'{name}'}/policies</code> · <code>POST</code> · <code>PUT|DELETE …/{'{rule}'}</code></td><td>Policy gate rules (changes need <code>vdb_admin</code>)</td></tr>
+          <tr><td><code>POST …/policies/check</code> · <code>GET …/policies/evaluations</code></td><td>Preview what a statement triggers; recent warnings and blocks</td></tr>
+          <tr><td><code>POST /api/branches/{'{name}'}/impact</code></td><td>What a change would affect, before running it</td></tr>
+          <tr><td><code>GET /api/ledger/diff</code> · <code>GET /api/blackbox/diff</code></td><td>Schema changes distinguishing two branches (<code>?a=&amp;b=</code>)</td></tr>
+          <tr><td><code>POST /api/import</code> · <code>POST /api/import/file</code></td><td>Migrate from a connection string ({'{ "source", "target", "continuous" }'}) or an upload</td></tr>
+          <tr><td><code>GET|POST /api/pipelines</code> · <code>GET|PUT|DELETE …/{'{id}'}</code> · <code>…/runs</code> · <code>…/run</code></td><td>ETL pipelines and their run history</td></tr>
+          <tr><td><code>GET|POST /api/keys</code> · <code>DELETE /api/keys/{'{id}'}</code></td><td>API keys</td></tr>
+          <tr><td><code>POST /auth/login</code> · <code>/auth/register</code> · <code>/auth/logout</code> · <code>GET /auth/me</code></td><td>Browser sessions (public)</td></tr>
+          <tr><td><code>POST /agents/{'{id}'}/branch</code> · <code>DELETE …</code></td><td>Agent API (<code>https://localhost:8088</code>) — create / destroy an agent database</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Agents over MCP</h2>
+      <p className="muted">Agent frameworks can skip HTTP: <code>vdb mcp</code> speaks the Model Context Protocol on
+        stdio, with 16 tools for branches, SQL, Blackbox, impact analysis and the policy gate.{' '}
+        <a href="https://github.com/vectoradb/vectoraDB/blob/main/docs/mcp.md" target="_blank" rel="noreferrer">Setup and tool reference</a>.</p>
+      <table>
+        <thead><tr><th>Client config</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td><code>{'{ "command": "vdb", "args": ["mcp"] }'}</code></td><td>Needs <code>vdb start</code> running; no auth of its own</td></tr>
         </tbody>
       </table>
 

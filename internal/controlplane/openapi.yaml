@@ -37,8 +37,21 @@ tags:
   - name: import
   - name: keys
   - name: agents
+  - name: auth
+    description: Browser sign-in and sessions (cookie-based; no API key needed).
 
 paths:
+  /api/openapi.yaml:
+    get:
+      tags: [status]
+      security: []
+      summary: This API description (OpenAPI, YAML). Point a client generator at it.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/yaml: { schema: { type: string } }
+
   /api/status:
     get:
       tags: [status]
@@ -71,8 +84,18 @@ paths:
               properties:
                 name: { type: string, example: qa }
       responses:
-        "200": { description: Created }
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string }
+                  status: { type: string, example: created }
+        "400": { description: "Invalid name (lowercase letters, digits and dashes)." }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { description: That branch already exists. }
 
   /api/branches/{name}:
     delete:
@@ -130,6 +153,8 @@ paths:
         - { name: risk, in: query, schema: { type: string } }
         - { name: status, in: query, schema: { type: string } }
         - { name: kind, in: query, schema: { type: string, enum: [human, agent] } }
+        - { name: since, in: query, description: "Only entries at or after this time.", schema: { type: string } }
+        - { name: until, in: query, description: "Only entries at or before this time.", schema: { type: string } }
         - { name: limit, in: query, schema: { type: integer, default: 200, maximum: 2000 } }
         - { name: offset, in: query, schema: { type: integer } }
       responses:
@@ -452,6 +477,32 @@ paths:
         "200": { description: Evaluations., content: { application/json: { schema: { type: array, items: { type: object } } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  # Blackbox is the product name for the ledger: every path above is served
+  # under /blackbox as well. These aliases mirror them exactly.
+  /api/branches/{name}/blackbox:
+    $ref: "#/paths/~1api~1branches~1{name}~1ledger"
+
+  /api/branches/{name}/blackbox/verify:
+    $ref: "#/paths/~1api~1branches~1{name}~1ledger~1verify"
+
+  /api/branches/{name}/blackbox/integrity:
+    $ref: "#/paths/~1api~1branches~1{name}~1ledger~1integrity"
+
+  /api/branches/{name}/blackbox/checkpoint:
+    $ref: "#/paths/~1api~1branches~1{name}~1ledger~1checkpoint"
+
+  /api/branches/{name}/blackbox/export:
+    $ref: "#/paths/~1api~1branches~1{name}~1ledger~1export"
+
+  /api/branches/{name}/blackbox/entries:
+    $ref: "#/paths/~1api~1branches~1{name}~1ledger~1entries"
+
+  /api/branches/{name}/blackbox/sessions:
+    $ref: "#/paths/~1api~1branches~1{name}~1ledger~1sessions"
+
+  /api/branches/{name}/blackbox/{id}/branch:
+    $ref: "#/paths/~1api~1branches~1{name}~1ledger~1{id}~1branch"
+
   /api/ledger/diff:
     get:
       tags: [ledger]
@@ -519,16 +570,41 @@ paths:
           application/json:
             schema:
               type: object
+              required: [source]
               properties:
-                from: { type: string, description: "postgres://…, mysql://…, mongodb://…, or a file path" }
-                as: { type: string, description: "target branch name" }
-      responses: { "200": { description: "Import started (streams progress via SSE)" }, "401": { $ref: "#/components/responses/Unauthorized" } }
+                source: { type: string, description: "postgres://…, mysql://…, mariadb://…, or mongodb://… — a connection string (this endpoint rejects file paths; use /api/import/file)" }
+                target: { type: string, description: "Branch to create (default: derived from the source)." }
+                continuous: { type: boolean, description: "Keep replicating after the first copy, rather than a one-off import." }
+      responses:
+        "200":
+          description: >-
+            Server-sent events as the import runs, ending with a `done` event
+            ({status, target, tables}) or an `error` event. `status` is
+            "replicating" when continuous was set, otherwise "imported".
+          content:
+            text/event-stream: { schema: { type: string } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
   /api/import/file:
     post:
       tags: [import]
       summary: Import an uploaded .sql/.csv/.json/.ndjson file into a fresh branch.
-      responses: { "200": { description: OK }, "401": { $ref: "#/components/responses/Unauthorized" } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary, description: "The kind is inferred from the filename extension." }
+                target: { type: string, description: "Branch to create (default: derived from the filename)." }
+      responses:
+        "200":
+          description: Server-sent events, ending with a `done` or `error` event.
+          content:
+            text/event-stream: { schema: { type: string } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
   /api/pipelines:
     get:
@@ -581,7 +657,7 @@ paths:
       summary: Mint a new API key (the secret is returned once).
       requestBody:
         content: { application/json: { schema: { type: object, properties: { name: { type: string } } } } }
-      responses: { "200": { description: "Created; the plaintext key is shown once." }, "401": { $ref: "#/components/responses/Unauthorized" } }
+      responses: { "201": { description: "Created; the plaintext key is shown once." }, "401": { $ref: "#/components/responses/Unauthorized" } }
 
   /api/keys/{id}:
     delete:
@@ -589,6 +665,111 @@ paths:
       summary: Revoke an API key.
       parameters: [{ $ref: "#/components/parameters/Id" }]
       responses: { "200": { description: Revoked }, "401": { $ref: "#/components/responses/Unauthorized" } }
+
+  /auth/register:
+    post:
+      tags: [auth]
+      security: []
+      summary: Create an account and start a browser session (sets the session cookie).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+      responses:
+        "201":
+          description: Created; the session cookie is set.
+          content:
+            application/json:
+              schema: { type: object, properties: { user: { type: object } } }
+        "400": { description: The password is shorter than 8 characters. }
+        "403": { description: "Signups are closed (VECTORADB_SIGNUP=closed)." }
+        "409": { description: That email is already registered. }
+
+  /auth/login:
+    post:
+      tags: [auth]
+      security: []
+      summary: Sign in with email and password (sets the session cookie).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        "200":
+          description: Signed in; the session cookie is set.
+          content:
+            application/json:
+              schema: { type: object, properties: { user: { type: object } } }
+        "401": { description: Invalid credentials. }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      security: []
+      summary: End the browser session and clear the cookie.
+      responses:
+        "200": { description: Signed out. }
+
+  /auth/me:
+    get:
+      tags: [auth]
+      security: []
+      summary: The signed-in user.
+      responses:
+        "200":
+          description: Always 200 — `user` is null when there is no session.
+          content:
+            application/json:
+              schema: { type: object, properties: { user: { type: object } } }
+
+  /auth/providers:
+    get:
+      tags: [auth]
+      security: []
+      summary: Which sign-in methods this deployment offers.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  github: { type: boolean }
+                  google: { type: boolean }
+                  signup: { type: boolean, description: Whether self-signup is open. }
+
+  /auth/oauth/{provider}:
+    get:
+      tags: [auth]
+      security: []
+      summary: Begin the OAuth flow (browser redirect).
+      parameters:
+        - { name: provider, in: path, required: true, schema: { type: string, enum: [github, google] } }
+      responses:
+        "302": { description: Redirect to the provider. }
+
+  /auth/oauth/{provider}/callback:
+    get:
+      tags: [auth]
+      security: []
+      summary: Where the provider sends the browser back; creates the session.
+      parameters:
+        - { name: provider, in: path, required: true, schema: { type: string, enum: [github, google] } }
+      responses:
+        "302": { description: Redirect back to the web console. }
 
   /agents:
     get:
