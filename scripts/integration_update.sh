@@ -39,7 +39,7 @@ cleanup() {
 	done
 	pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS updkeep" >/dev/null
 	"$V" branch delete updb >/dev/null 2>&1
-	rm -rf "$HOME/.vectoradb/updates" "$HOME/.vectoradb/update-check.json"
+	rm -rf "$HOME/.vectoradb/updates" "$HOME/.vectoradb/update-check.json" "$HOME/.vectoradb/update-notice.json"
 	# Put the stack back on the installed binary.
 	"$V" stop >/dev/null 2>&1
 	/usr/local/bin/vdb start >/dev/null 2>&1
@@ -73,9 +73,13 @@ rels = [rel("v1.0.0", [engine], pre=True), rel("v0.99.5", []), rel("v0.99.0", [e
 os.makedirs(os.path.join(www, "repos/vectoradb/vectoraDB"), exist_ok=True)
 json.dump(rels, open(os.path.join(www, "repos/vectoradb/vectoraDB/releases"), "w"))
 PY
-python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$T/www" >/dev/null 2>&1 &
-HTTP_PID=$!
-for _ in $(seq 50); do curl -sf "$VDB_UPDATE_BASE_URL/repos/vectoradb/vectoraDB/releases" >/dev/null && break; sleep 0.2; done
+start_fake_github() {
+	python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$T/www" >/dev/null 2>&1 &
+	HTTP_PID=$!
+	for _ in $(seq 50); do curl -sf "$VDB_UPDATE_BASE_URL/repos/vectoradb/vectoraDB/releases" >/dev/null && break; sleep 0.2; done
+}
+stop_fake_github() { [ -n "$HTTP_PID" ] && kill "$HTTP_PID" 2>/dev/null; HTTP_PID=""; }
+start_fake_github
 assert_eq "test binary is 0.98.0" "$("$V" version)" "vdb 0.98.0"
 
 # Stack on the 0.98.0 binary, with data on main and on a branch.
@@ -110,12 +114,21 @@ assert_eq "notice is the last line" "$(tail -n 1 <<<"$OUT")" \
 assert_eq "notice printed once" "$(grep -c 'is available' <<<"$OUT")" "1"
 contains "banner still printed" "VectoraDB is up (background)" "$OUT"
 
+echo "### 1b. the answer is remembered between starts"
+# GitHub throttles repeated downloads of a release asset, so the check asks only
+# for the releases list and remembers the answer (default 6h).
+stop_fake_github
+lacks "a forced check with GitHub unreachable prints nothing" "is available" "$(VECTORADB_UPDATE_CHECK_INTERVAL=0 "$V" start 2>&1)"
+assert_eq "the remembered notice still prints with GitHub unreachable" "$(tail -n 1 <<<"$("$V" start 2>&1)")" \
+	'VectoraDB v0.99.0 is available (you have 0.98.0). Run `vdb update` to get the new capabilities.'
+start_fake_github
+
 echo "### 2. VECTORADB_NO_UPDATE_CHECK=1 turns it off"
-lacks "no notice when turned off" "is available" "$(VECTORADB_NO_UPDATE_CHECK=1 "$V" start 2>&1)"
+lacks "no notice when turned off" "is available" "$(VECTORADB_NO_UPDATE_CHECK=1 VECTORADB_UPDATE_CHECK_INTERVAL=0 "$V" start 2>&1)"
 
 echo "### 3. offline: nothing printed, no noticeable delay"
 S=$(date +%s)
-OUT="$(VDB_UPDATE_BASE_URL=http://127.0.0.1:9 "$V" start 2>&1)"
+OUT="$(VDB_UPDATE_BASE_URL=http://127.0.0.1:9 VECTORADB_UPDATE_CHECK_INTERVAL=0 "$V" start 2>&1)"
 lacks "no notice offline" "is available" "$OUT"
 lacks "no error offline" "error" "$OUT"
 assert_eq "offline start not slowed (<15s)" "$([ $(( $(date +%s) - S )) -lt 15 ] && echo yes)" "yes"
@@ -171,7 +184,7 @@ assert_eq "control plane answers" "$(curl -sk -o /dev/null -w '%{http_code}' htt
 
 echo "### 8. up to date afterwards"
 contains "--check says up to date" "VectoraDB 0.99.0 is up to date." "$("$V" update --check 2>&1)"
-lacks "start shows no notice" "is available" "$("$V" start 2>&1)"
+lacks "start shows no notice" "is available" "$(VECTORADB_UPDATE_CHECK_INTERVAL=0 "$V" start 2>&1)"
 
 echo
 echo "integration-update: $PASS passed, $FAIL failed"

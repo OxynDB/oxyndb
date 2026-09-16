@@ -51,10 +51,11 @@ func (r Release) Asset(name string) (Asset, bool) {
 
 // Client talks to GitHub releases.
 type Client struct {
-	BaseURL   string
-	Repo      string
-	HTTP      *http.Client
-	CachePath string // optional: remembers the last releases list (with its ETag)
+	BaseURL    string
+	Repo       string
+	HTTP       *http.Client
+	CachePath  string // optional: remembers the last releases list (with its ETag)
+	NoticePath string // optional: remembers the last start-time check (see BackgroundCheck)
 }
 
 // NewClient builds a client from the environment (VDB_UPDATE_BASE_URL, VDB_REPO).
@@ -67,7 +68,11 @@ func NewClient(getenv func(string) string, cachePath string) *Client {
 	if repo == "" {
 		repo = DefaultRepo
 	}
-	return &Client{BaseURL: base, Repo: repo, HTTP: &http.Client{}, CachePath: cachePath}
+	c := &Client{BaseURL: base, Repo: repo, HTTP: &http.Client{}, CachePath: cachePath}
+	if cachePath != "" {
+		c.NoticePath = filepath.Join(filepath.Dir(cachePath), "update-notice.json")
+	}
+	return c
 }
 
 func (c *Client) httpClient() *http.Client {

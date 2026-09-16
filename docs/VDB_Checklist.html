@@ -103,7 +103,7 @@
   <div class="meta">
     <b>What this is:</b> every VectoraDB feature and its sub-features — built or not, and how it was tested — so it's clear where we are and what's next.
     How each feature works is in <code>VDB_Feature_Implemented.pdf</code> (same ids).<br>
-    <b>Last updated:</b> 15 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>6a06175</code> + safety fixes batch 1 (<code>fix/safety-batch1</code>)<br>
+    <b>Last updated:</b> 16 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>7ac2e83</code> (released as v0.8.4) + the start-notice fix (<code>fix/update-notice-throttle</code>)<br>
     <b>Source:</b> <code>docs/VDB_Checklist.html</code> → <code>make feature-doc</code> → this PDF
   </div>
 
@@ -176,13 +176,13 @@
       <li class="todo">Checksum verification</li></ul></td><td class="tb">Unit (<code>host_test.go</code>)</td></tr>
     <tr data-id="A8" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">A8</td><td><b>New-release notice on <code>vdb start</code></b><ul class="subs">
       <li class="ok">Background check, 1.5 s limit, printed last</li><li class="ok">Only a promoted, newer, complete release</li>
-      <li class="ok">ETag cache (rate limit)</li><li class="ok">Off switch; never on dev builds; silent offline</li></ul></td><td class="tb">Unit; update §1–§3, §8</td></tr>
+      <li class="ok">One request, answer remembered 6 h (GitHub throttles asset downloads)</li><li class="ok">Off switch; never on dev builds; silent offline</li></ul></td><td class="tb">Unit; update §1, §1b, §2, §3, §8; real Mac check</td></tr>
     <tr data-id="A9" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">A9</td><td><b><code>vdb update</code></b><ul class="subs">
       <li class="ok">Downloads and verifies everything before changing anything</li><li class="ok">Stops servers, installs engine, restarts old one on failure</li>
       <li class="ok"><code>up</code>, Blackbox upgrade, <code>start</code> on the new engine</li><li class="ok">Replaces host <code>vdb</code>, keeps previous binaries</li>
       <li class="ok"><code>--check</code>, <code>--yes</code>, <code>--version</code></li><li class="ok">Linux path verified end to end</li>
-      <li class="todo">macOS path run against a real release</li><li class="todo">Windows path run against a real release</li>
-      <li class="todo">Release signatures</li></ul></td><td class="tb">Unit; update §4–§7 (49 / 49)</td></tr>
+      <li class="ok">macOS path run against a real release (v0.8.3 → v0.8.4)</li><li class="todo">Windows path run against a real release</li>
+      <li class="todo">Release signatures</li></ul></td><td class="tb">Unit; update §4–§7; a real Mac run</td></tr>
   </table>
 </section>
 
