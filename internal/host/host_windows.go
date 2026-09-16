@@ -283,7 +283,7 @@ func finishSetup(name string) error {
 		return err
 	}
 	fmt.Println()
-	fmt.Println("VectoraDB is running.")
+	fmt.Println(green("VectoraDB is running."))
 	fmt.Println("  Try:      vdb status")
 	// The first start mints a local API key and caches it in the guest; the
 	// gateway needs it as the password, so print the string that actually works.
