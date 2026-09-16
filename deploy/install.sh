@@ -9,11 +9,18 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/vectoradb/vectoraDB/main/deploy/install.sh | sh
 #
+# Every download is checked against the release's SHA256SUMS before it is
+# installed: these binaries are run as root, and a truncated or altered download
+# must never reach $PREFIX/bin. Anything that cannot be verified stops the
+# install (VDB_NO_VERIFY=1 deliberately skips the check).
+#
 # Env overrides:
 #   VDB_VERSION   release tag to install         (default: latest)
 #   VDB_REPO      GitHub owner/repo              (default: vectoradb/vectoraDB)
 #   VDB_DIST      install from a local dir of prebuilt binaries instead of downloading
 #   VDB_PREFIX    install prefix                 (default: /usr/local)
+#   VDB_BASE_URL  release download base URL      (default: GitHub releases)
+#   VDB_NO_VERIFY set to 1 to skip checksum verification
 set -eu
 
 REPO="${VDB_REPO:-vectoradb/vectoraDB}"
@@ -23,6 +30,7 @@ BINDIR="$PREFIX/bin"
 SHAREDIR="$PREFIX/share/vectoradb"
 
 say()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
+warn() { printf '\033[33mwarning:\033[0m %s\n' "$*" >&2; }
 err()  { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
 # sudo helper: use sudo only if we can't create/write the install dir ourselves.
@@ -61,11 +69,58 @@ fetch() { # fetch <url> <dest>
 
 # Resolve the download URL for a release asset.
 asset_url() { # asset_url <asset-name>
-	if [ "$VERSION" = "latest" ]; then
+	if [ -n "${VDB_BASE_URL:-}" ]; then
+		echo "$VDB_BASE_URL/$1"
+	elif [ "$VERSION" = "latest" ]; then
 		echo "https://github.com/$REPO/releases/latest/download/$1"
 	else
 		echo "https://github.com/$REPO/releases/download/$VERSION/$1"
 	fi
+}
+
+# --- integrity -------------------------------------------------------------
+# The release publishes SHA256SUMS next to its binaries. It travels over the
+# same TLS connection as the files, so it proves integrity (a complete,
+# unaltered download), not authorship — signatures would be needed for that.
+
+VERIFY=1
+[ "${VDB_NO_VERIFY:-}" = "1" ] && VERIFY=0
+# A local dir is the user's own build; there is no release to check it against.
+[ -n "${VDB_DIST:-}" ] && VERIFY=0
+
+sha256_of() { # sha256_of <file>
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum "$1" | awk '{print $1}'
+	elif command -v shasum >/dev/null 2>&1; then
+		shasum -a 256 "$1" | awk '{print $1}'
+	else
+		echo ""
+	fi
+}
+
+SUMS=""
+if [ "$VERIFY" = "1" ]; then
+	SUMS="$tmp/SHA256SUMS"
+	fetch "$(asset_url SHA256SUMS)" "$SUMS" 2>/dev/null || err "could not fetch SHA256SUMS for $VERSION.
+Nothing was installed. Retry, or set VDB_NO_VERIFY=1 to install without checking (not recommended)."
+fi
+
+verify_file() { # verify_file <asset-name> <path>
+	[ "$VERIFY" = "1" ] || return 0
+	want="$(awk -v n="$1" '{ f = $2; sub(/^\*/, "", f) } f == n { print $1; exit }' "$SUMS")"
+	[ -n "$want" ] || { rm -f "$2"; err "$1 is not listed in SHA256SUMS for $VERSION.
+Nothing was installed. Set VDB_NO_VERIFY=1 to install without checking (not recommended)."; }
+	got="$(sha256_of "$2")"
+	[ -n "$got" ] || { rm -f "$2"; err "need sha256sum or shasum to verify downloads.
+Nothing was installed. Set VDB_NO_VERIFY=1 to install without checking (not recommended)."; }
+	if [ "$got" != "$want" ]; then
+		rm -f "$2"
+		err "checksum mismatch for $1 — the download does not match the release.
+  expected $want
+  got      $got
+Nothing was installed."
+	fi
+	say "verified $1"
 }
 
 # Get the host binary (from a local dist dir, or a GitHub release).
@@ -76,6 +131,7 @@ if [ -n "${VDB_DIST:-}" ]; then
 else
 	say "Downloading $asset ($VERSION)…"
 	fetch "$(asset_url "$asset")" "$tmp/vdb" || err "download failed — check the release exists for $os/$arch"
+	verify_file "$asset" "$tmp/vdb"
 fi
 chmod +x "$tmp/vdb"
 
@@ -90,8 +146,13 @@ if [ "$os" = "darwin" ]; then
 	say "Fetching the Linux engine binary ($linux_asset) for the VM…"
 	if [ -n "${VDB_DIST:-}" ] && [ -f "$VDB_DIST/$linux_asset" ]; then
 		cp "$VDB_DIST/$linux_asset" "$tmp/$linux_asset"
+	elif fetch "$(asset_url "$linux_asset")" "$tmp/$linux_asset"; then
+		# It runs as root inside the VM, so it is held to the same standard as
+		# the launcher: verified, or not installed at all.
+		verify_file "$linux_asset" "$tmp/$linux_asset"
 	else
-		fetch "$(asset_url "$linux_asset")" "$tmp/$linux_asset" || true
+		rm -f "$tmp/$linux_asset"
+		warn "could not download $linux_asset; \`vdb setup\` will fetch it instead"
 	fi
 	if [ -f "$tmp/$linux_asset" ]; then
 		$SUDO install -d "$SHAREDIR"

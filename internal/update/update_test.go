@@ -407,6 +407,45 @@ func TestNoticeIsRememberedBetweenStarts(t *testing.T) {
 	}
 }
 
+// Release is what `vdb setup` installs from: any published release with this
+// platform's files, newest first, regardless of what is installed now.
+func TestReleaseForSetup(t *testing.T) {
+	f := newFakeGitHub(t)
+	linux := Target{GOOS: "linux", HostArch: "amd64"}
+	ctx := context.Background()
+	f.publish("v0.98.0", map[string]string{"vdb-linux-amd64": "old"})
+	f.publish("v0.99.0", map[string]string{"vdb-linux-amd64": "new"})
+	c := f.client("")
+
+	// Newest complete release, and its checksums come with it.
+	o, err := c.Release(ctx, "latest", linux)
+	if err != nil || o == nil || o.Release.Tag != "v0.99.0" {
+		t.Fatalf("latest = %v, %v", o, err)
+	}
+	if o.Sums["vdb-linux-amd64"] == "" {
+		t.Error("Release didn't bring the checksums setup needs")
+	}
+	// "" means the same as "latest".
+	if o, err := c.Release(ctx, "", linux); err != nil || o.Release.Tag != "v0.99.0" {
+		t.Fatalf("empty tag = %v, %v", o, err)
+	}
+	// An older tag installs fine — setup is not an upgrade.
+	if o, err := c.Release(ctx, "v0.98.0", linux); err != nil || o.Release.Tag != "v0.98.0" {
+		t.Fatalf("pinned older = %v, %v", o, err)
+	}
+	if _, err := c.Release(ctx, "v7.0.0", linux); err == nil {
+		t.Error("an unknown tag was accepted")
+	}
+	// A release still being published (no engine yet) is skipped, not offered.
+	f.publish("v1.0.0", map[string]string{"vdb-darwin-arm64": "wrong platform"})
+	if o, err := c.Release(ctx, "latest", linux); err != nil || o.Release.Tag != "v0.99.0" {
+		t.Fatalf("incomplete release offered: %v, %v", o, err)
+	}
+	if _, err := c.Release(ctx, "v1.0.0", linux); err == nil || !strings.Contains(err.Error(), "missing") {
+		t.Errorf("pinned incomplete release = %v, want a 'missing' error", err)
+	}
+}
+
 func TestShouldCheck(t *testing.T) {
 	env := map[string]string{}
 	get := func(k string) string { return env[k] }

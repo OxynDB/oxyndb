@@ -124,6 +124,79 @@ func Candidates(rels []Release, current Version, t Target, pin string) ([]Releas
 	return out, nil
 }
 
+// Release finds a release to install from, with its checksums — what `vdb setup`
+// needs, where "newer than what is installed" doesn't apply: setup installs the
+// engine of a chosen release, whatever this machine currently runs.
+//
+// tag is a release tag, or "" / "latest" for the newest published release that
+// has every file this target needs. The returned Offer carries the release's
+// SHA256SUMS, so Download verifies what it fetches.
+func (c *Client) Release(ctx context.Context, tag string, t Target) (*Offer, error) {
+	rels, err := c.ListReleases(ctx)
+	if err != nil {
+		return nil, err
+	}
+	required := RequiredAssets(t)
+	pinned := tag != "" && !strings.EqualFold(tag, "latest")
+
+	var usable []Release
+	for _, r := range rels {
+		if r.Draft {
+			continue
+		}
+		if pinned {
+			v, err := ParseVersion(r.Tag)
+			want, werr := ParseVersion(tag)
+			if err != nil || werr != nil || v.Compare(want) != 0 {
+				continue
+			}
+		} else if r.Prerelease {
+			continue // only promoted releases are installed by default
+		}
+		if m := missingAssets(r, required); len(m) > 0 {
+			if pinned {
+				return nil, fmt.Errorf("release %s is missing %s", r.Tag, strings.Join(m, ", "))
+			}
+			continue
+		}
+		usable = append(usable, r)
+		if pinned {
+			break
+		}
+	}
+	if len(usable) == 0 {
+		if pinned {
+			return nil, fmt.Errorf("no published release %s with the files this platform needs", tag)
+		}
+		return nil, fmt.Errorf("no published release has the files this platform needs")
+	}
+	if !pinned {
+		sort.SliceStable(usable, func(i, j int) bool {
+			a, _ := ParseVersion(usable[i].Tag)
+			b, _ := ParseVersion(usable[j].Tag)
+			return a.Compare(b) > 0
+		})
+	}
+
+	r := usable[0]
+	sa, _ := r.Asset(SumsAsset)
+	body, err := c.fetchSmall(ctx, sa.URL, 1<<20)
+	if err != nil {
+		return nil, fmt.Errorf("%s: fetching %s: %w", r.Tag, SumsAsset, err)
+	}
+	sums, err := ParseChecksums(bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", r.Tag, err)
+	}
+	for _, name := range required {
+		if _, ok := sums[name]; !ok {
+			return nil, fmt.Errorf("release %s: %s doesn't list %s", r.Tag, SumsAsset, name)
+		}
+	}
+	v, _ := ParseVersion(r.Tag)
+	return &Offer{Release: r, Version: v, Sums: sums, Required: required}, nil
+}
+
 // Available is the check `vdb start` makes: the newest release worth telling the
 // user about, or nil when this install is up to date.
 //

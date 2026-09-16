@@ -10,8 +10,13 @@
 # This file must stay free of a UTF-8 BOM: `irm | iex` pipes the BOM into the
 # parser, which then reports `The term '# ' is not recognized` on line 1.
 #
+# Every VectoraDB download is checked against the release's SHA256SUMS before it
+# is kept -- these files run as root inside the distro. Anything that cannot be
+# verified stops the install (VDB_NO_VERIFY=1 deliberately skips the check).
+#
 # Env overrides: VDB_VERSION (default "latest"), VDB_REPO, VDB_PREFIX,
-# VDB_NO_SETUP (skip `vdb setup`), VDB_NO_ELEVATE (never prompt for admin).
+# VDB_NO_SETUP (skip `vdb setup`), VDB_NO_ELEVATE (never prompt for admin),
+# VDB_NO_VERIFY (skip checksum verification).
 
 $ErrorActionPreference = 'Stop'
 
@@ -196,6 +201,59 @@ function Assert-UpstreamChecksum([string]$Path, [string]$SumsUrl, [string]$Name)
     }
 }
 
+# --- VectoraDB's own releases ----------------------------------------------
+# Every release publishes SHA256SUMS beside its assets. It travels over the same
+# TLS connection as the files, so it proves integrity (a complete, unaltered
+# download), not authorship -- signatures would be needed for that. The files
+# below are executed as root inside the distro, so an unverifiable one is not
+# installed. VDB_NO_VERIFY=1 skips the check deliberately.
+$script:VdbSums = $null
+
+function Get-VdbSums {
+    if ($env:VDB_NO_VERIFY -eq '1') { return $null }
+    if ($null -ne $script:VdbSums) { return $script:VdbSums }
+    try {
+        $body = (Invoke-WebRequest -UseBasicParsing -Uri (Get-VdbAsset 'SHA256SUMS')).Content
+    } catch {
+        throw "could not fetch SHA256SUMS for $Version -- nothing was installed.`nRetry, or set VDB_NO_VERIFY=1 to install without checking (not recommended)."
+    }
+    $script:VdbSums = if ($body -is [byte[]]) { [System.Text.Encoding]::UTF8.GetString($body) } else { [string]$body }
+    return $script:VdbSums
+}
+
+# Get-VdbChecksum returns the expected SHA256 for a release asset, or $null when
+# verification is switched off.
+function Get-VdbChecksum([string]$Name) {
+    $sums = Get-VdbSums
+    if ($null -eq $sums) { return $null }
+    foreach ($line in ($sums -split "`n")) {
+        if ($line -match '^([0-9a-fA-F]{64})\s+\*?(.+?)\s*$' -and $Matches[2] -eq $Name) {
+            return $Matches[1].ToLower()
+        }
+    }
+    throw "$Name is not listed in SHA256SUMS for $Version -- nothing was installed.`nSet VDB_NO_VERIFY=1 to install without checking (not recommended)."
+}
+
+# Test-VdbChecksum reports whether a staged copy still matches the release, for
+# deciding if a large download can be reused. Anything unverifiable is $false.
+function Test-VdbChecksum([string]$Path, [string]$Name) {
+    if ($env:VDB_NO_VERIFY -eq '1') { return $false }
+    try { $want = Get-VdbChecksum $Name } catch { return $false }
+    if (-not $want) { return $false }
+    return (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLower() -eq $want
+}
+
+# Assert-VdbChecksum verifies a download and deletes it if it does not match.
+function Assert-VdbChecksum([string]$Path, [string]$Name) {
+    $want = Get-VdbChecksum $Name
+    if (-not $want) { return }   # VDB_NO_VERIFY=1
+    $got = (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLower()
+    if ($got -ne $want) {
+        Remove-Item $Path -Force -ErrorAction SilentlyContinue
+        throw "checksum mismatch for $Name -- the download does not match the release.`n  expected $want`n  got      $got`nNothing was installed."
+    }
+}
+
 # Add-ToPath appends a directory to the user PATH, idempotently.
 function Add-ToPath([string]$Dir) {
     $cur = [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -245,10 +303,13 @@ function Invoke-Install {
 
     New-Item -ItemType Directory -Force -Path $Prefix | Out-Null
 
-    # 2. The launcher and the engine binary.
+    # 2. The launcher and the engine binary, each checked against the release's
+    #    own SHA256SUMS before it is kept: both run as root inside the distro.
     Write-Step "Downloading VectoraDB"
     Get-File (Get-VdbAsset 'vdb-windows-amd64.exe') "$Prefix\vdb.exe" | Out-Null
+    Assert-VdbChecksum "$Prefix\vdb.exe" 'vdb-windows-amd64.exe'
     Get-File (Get-VdbAsset 'vdb-linux-amd64') "$Prefix\vdb-linux-amd64" | Out-Null
+    Assert-VdbChecksum "$Prefix\vdb-linux-amd64" 'vdb-linux-amd64'
 
     # The engine finds a Docker build context relative to the working directory,
     # which finds nothing for someone who installed vdb rather than cloning the
@@ -256,19 +317,52 @@ function Invoke-Install {
     # tar.exe is built into Windows 10 1803+ and Windows 11.
     New-Item -ItemType Directory -Force -Path "$Prefix\docker-context" | Out-Null
     Get-File (Get-VdbAsset 'vectoradb-docker-context.tar.gz') "$Prefix\docker-context.tar.gz" | Out-Null
+    Assert-VdbChecksum "$Prefix\docker-context.tar.gz" 'vectoradb-docker-context.tar.gz'
     & tar.exe -xzf "$Prefix\docker-context.tar.gz" -C "$Prefix\docker-context"
     if ($LASTEXITCODE -ne 0) { throw "could not expand the image build context (tar.exe failed)" }
     Remove-Item "$Prefix\docker-context.tar.gz" -Force
 
-    # 3. The Ubuntu rootfs. ~340 MB, so don't re-fetch a verified copy.
-    $rootfs = "$Prefix\vectoradb-rootfs.tar.gz"
-    $verify = -not $env:VDB_ROOTFS_URL
-    if ((Test-Path $rootfs) -and $verify -and (Test-UpstreamChecksum $rootfs "$RootfsBase/SHA256SUMS" $RootfsName)) {
-        Write-Step "Ubuntu rootfs already downloaded"
-    } else {
-        Write-Step "Downloading the Ubuntu rootfs (~340 MB, one time)"
-        Get-File $RootfsUrl $rootfs | Out-Null
-        if ($verify) { Assert-UpstreamChecksum $rootfs "$RootfsBase/SHA256SUMS" $RootfsName }
+    # 3. The distro. Preferred: our prebuilt image, which already contains
+    #    Docker, the btrfs tools, the engine and the container images, so `vdb
+    #    setup` skips an apt install, a docker build and three registry pulls.
+    #    It is bigger (~685 MB vs ~340 MB) but turns setup from many minutes of
+    #    network-dependent work into an import. Releases that don't publish it,
+    #    or a copy that cannot be verified, fall back to the Ubuntu rootfs.
+    $distro = "$Prefix\vectoradb-distro.tar.gz"
+    $haveDistro = $false
+    if (Test-Path $distro) {
+        if (Test-VdbChecksum $distro 'vectoradb-distro.tar.gz') {
+            Write-Step "VectoraDB distro image already downloaded"
+            $haveDistro = $true
+        } else {
+            Remove-Item $distro -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if (-not $haveDistro) {
+        Write-Step "Downloading the VectoraDB distro image (~685 MB, one time)"
+        if (Get-File (Get-VdbAsset 'vectoradb-distro.tar.gz') $distro -Required:$false) {
+            try {
+                Assert-VdbChecksum $distro 'vectoradb-distro.tar.gz'
+                $haveDistro = $true
+            } catch {
+                Remove-Item $distro -Force -ErrorAction SilentlyContinue
+                Write-Warning "$($_.Exception.Message)"
+                Write-Warning "falling back to the Ubuntu rootfs"
+            }
+        }
+    }
+
+    if (-not $haveDistro) {
+        # The Ubuntu rootfs. ~340 MB, so don't re-fetch a verified copy.
+        $rootfs = "$Prefix\vectoradb-rootfs.tar.gz"
+        $verify = -not $env:VDB_ROOTFS_URL
+        if ((Test-Path $rootfs) -and $verify -and (Test-UpstreamChecksum $rootfs "$RootfsBase/SHA256SUMS" $RootfsName)) {
+            Write-Step "Ubuntu rootfs already downloaded"
+        } else {
+            Write-Step "Downloading the Ubuntu rootfs (~340 MB, one time)"
+            Get-File $RootfsUrl $rootfs | Out-Null
+            if ($verify) { Assert-UpstreamChecksum $rootfs "$RootfsBase/SHA256SUMS" $RootfsName }
+        }
     }
 
     # 4. PATH -- persisted for new shells, and live in this one so `vdb` works

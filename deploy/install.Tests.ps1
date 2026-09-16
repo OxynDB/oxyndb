@@ -75,6 +75,84 @@ Describe 'installer is independent of WSL' {
 # breaks `irm | iex` ("The term '# ' is not recognized"), and no BOM makes
 # Windows PowerShell 5.1 read non-ASCII as ANSI and fail to parse the file.
 # Pure ASCII with no BOM is the only encoding that satisfies both.
+Describe 'VectoraDB release verification' {
+    BeforeAll {
+        $script:sums = @"
+$('a' * 64)  vdb-windows-amd64.exe
+$('b' * 64) *vectoradb-distro.tar.gz
+"@
+    }
+
+    It 'reads a checksum from the release listing' {
+        Mock Get-VdbSums { $script:sums }
+        Get-VdbChecksum 'vdb-windows-amd64.exe' | Should -Be ('a' * 64)
+    }
+
+    It 'accepts the binary-mode "*name" form' {
+        Mock Get-VdbSums { $script:sums }
+        Get-VdbChecksum 'vectoradb-distro.tar.gz' | Should -Be ('b' * 64)
+    }
+
+    It 'refuses an asset the listing does not name' {
+        Mock Get-VdbSums { $script:sums }
+        { Get-VdbChecksum 'vdb-linux-amd64' } | Should -Throw '*not listed in SHA256SUMS*'
+    }
+
+    It 'deletes a file whose checksum does not match and stops the install' {
+        Mock Get-VdbSums { $script:sums }
+        $f = Join-Path $TestDrive 'vdb-windows-amd64.exe'
+        Set-Content -Path $f -Value 'not the real binary' -NoNewline
+        { Assert-VdbChecksum $f 'vdb-windows-amd64.exe' } | Should -Throw '*checksum mismatch*'
+        Test-Path $f | Should -BeFalse
+    }
+
+    It 'passes a file that matches' {
+        $f = Join-Path $TestDrive 'ok.bin'
+        Set-Content -Path $f -Value 'contents' -NoNewline
+        $hash = (Get-FileHash -Algorithm SHA256 -Path $f).Hash.ToLower()
+        Mock Get-VdbSums { "$hash  ok.bin" }
+        { Assert-VdbChecksum $f 'ok.bin' } | Should -Not -Throw
+        Test-Path $f | Should -BeTrue
+    }
+
+    It 'skips verification when VDB_NO_VERIFY=1' {
+        $old = $env:VDB_NO_VERIFY
+        try {
+            $env:VDB_NO_VERIFY = '1'
+            $f = Join-Path $TestDrive 'skip.bin'
+            Set-Content -Path $f -Value 'whatever' -NoNewline
+            Get-VdbChecksum 'anything' | Should -BeNullOrEmpty
+            { Assert-VdbChecksum $f 'anything' } | Should -Not -Throw
+        } finally { $env:VDB_NO_VERIFY = $old }
+    }
+
+    It 'treats an unverifiable staged copy as unusable' {
+        Mock Get-VdbSums { $script:sums }
+        $f = Join-Path $TestDrive 'stale.tar.gz'
+        Set-Content -Path $f -Value 'stale' -NoNewline
+        Test-VdbChecksum $f 'vectoradb-distro.tar.gz' | Should -BeFalse
+    }
+}
+
+Describe 'installer prefers the prebuilt distro' {
+    BeforeAll { $script:src = Get-Content -Raw (Join-Path $PSScriptRoot 'install.ps1') }
+
+    It 'downloads the distro image' {
+        $script:src | Should -Match "Get-VdbAsset 'vectoradb-distro.tar.gz'"
+    }
+
+    It 'falls back to the Ubuntu rootfs when the distro is unusable' {
+        $script:src | Should -Match 'falling back to the Ubuntu rootfs'
+    }
+
+    It 'verifies every VectoraDB asset it keeps' {
+        foreach ($name in 'vdb-windows-amd64.exe', 'vdb-linux-amd64', 'vectoradb-docker-context.tar.gz', 'vectoradb-distro.tar.gz') {
+            $script:src | Should -Match ([regex]::Escape("Assert-VdbChecksum"))
+            $script:src | Should -Match ([regex]::Escape($name))
+        }
+    }
+}
+
 Describe 'install.ps1 encoding' {
     It 'has no UTF-8 BOM' {
         $b = [System.IO.File]::ReadAllBytes("$PSScriptRoot/install.ps1")

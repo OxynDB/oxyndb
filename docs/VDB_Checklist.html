@@ -103,7 +103,7 @@
   <div class="meta">
     <b>What this is:</b> every VectoraDB feature and its sub-features — built or not, and how it was tested — so it's clear where we are and what's next.
     How each feature works is in <code>VDB_Feature_Implemented.pdf</code> (same ids).<br>
-    <b>Last updated:</b> 16 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>7ac2e83</code> (released as v0.8.4) + the start-notice fix (<code>fix/update-notice-throttle</code>)<br>
+    <b>Last updated:</b> 16 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>c71ce45</code> (v0.8.5) + download integrity (<code>fix/download-integrity</code>)<br>
     <b>Source:</b> <code>docs/VDB_Checklist.html</code> → <code>make feature-doc</code> → this PDF
   </div>
 
@@ -153,11 +153,12 @@
     <tr data-id="A1" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">A1</td><td><b>One-line installer (macOS / Linux)</b><ul class="subs">
       <li class="ok">Detects OS / CPU, downloads the release binary</li><li class="ok">Installs to the prefix (sudo only if needed)</li>
       <li class="ok">Stages the Linux engine for the VM on macOS</li><li class="ok"><code>VDB_VERSION</code>, <code>VDB_REPO</code>, <code>VDB_DIST</code>, <code>VDB_PREFIX</code></li>
-      <li class="todo">Verify downloads against <code>SHA256SUMS</code></li></ul></td><td class="tb">Manual</td></tr>
+      <li class="ok">Verifies every download against <code>SHA256SUMS</code>; refuses what it can't check</li></ul></td><td class="tb">Unit (<code>test_install_sh.sh</code>, CI); manual</td></tr>
     <tr data-id="A2" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">A2</td><td><b>Windows installer (install.ps1)</b><ul class="subs">
       <li class="ok">Installs WSL, elevates, resumes after reboot</li><li class="ok">Downloads vdb.exe, engine, image build context</li>
       <li class="ok">Ubuntu rootfs verified against Ubuntu's checksums</li><li class="ok">Adds to PATH and runs <code>vdb setup</code></li>
-      <li class="todo">Use the prebuilt distro image</li><li class="todo">Verify VectoraDB's own downloads</li></ul></td><td class="tb">Pester unit tests (Windows CI)</td></tr>
+      <li class="ok">Prefers the prebuilt distro image, falls back to the rootfs</li><li class="ok">Verifies VectoraDB's own downloads</li>
+      <li class="todo">Run on a real Windows machine</li></ul></td><td class="tb">Pester unit tests (Windows CI)</td></tr>
     <tr data-id="A3" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">A3</td><td><b><code>vdb setup</code> on macOS (Lima)</b><ul class="subs">
       <li class="ok">Creates / starts the Lima VM</li><li class="ok">Installs Docker and ZFS</li>
       <li class="ok">Reinstalls the engine on every run</li><li class="ok">Starts the stack</li>
@@ -165,7 +166,8 @@
     <tr data-id="A4" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">A4</td><td><b><code>vdb setup</code> on Windows (WSL2 + btrfs)</b><ul class="subs">
       <li class="ok">Imports a dedicated distro with systemd</li><li class="ok">Docker, btrfs and a storage mount unit</li>
       <li class="ok">Quiet steps, detail in install.log</li><li class="ok">Waits for systemd on a cold distro</li>
-      <li class="part">Preloaded images (tag doesn't match the engine's)</li><li class="todo">Summary with API key and <code>sslmode</code></li></ul></td><td class="tb">Unit (<code>host_wsl_test.go</code>); manual on Windows</td></tr>
+      <li class="ok">Preloaded images tagged as the engine runs them</li><li class="ok">Summary with API key and <code>sslmode</code></li>
+      <li class="todo">Run on a real Windows machine</li></ul></td><td class="tb">Unit (<code>host_wsl_test.go</code>); manual on Windows</td></tr>
     <tr data-id="A5" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">A5</td><td><b>Linux native</b><ul class="subs">
       <li class="ok">Engine runs in-process, no VM</li><li class="ok"><code>vdb setup</code> explains nothing is needed</li></ul></td><td class="tb">VM integration (all suites run on Linux)</td></tr>
     <tr data-id="A6" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">A6</td><td><b>Command forwarding &amp; host file streaming</b><ul class="subs">
@@ -173,7 +175,7 @@
       <li class="ok"><code>vdb import</code> streams a host file over stdin</li><li class="todo">Stream <code>pipeline run</code> spec files too</li></ul></td><td class="tb">Unit (<code>TestImportLocalFile</code>, <code>TestWSLArgs</code>)</td></tr>
     <tr data-id="A7" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">A7</td><td><b>Always-latest engine binary</b><ul class="subs">
       <li class="ok">Downloads the newest engine into the cache (ELF check)</li><li class="ok"><code>VECTORADB_NO_REFRESH</code>, <code>VDB_VERSION</code></li>
-      <li class="todo">Checksum verification</li></ul></td><td class="tb">Unit (<code>host_test.go</code>)</td></tr>
+      <li class="ok">Verified against <code>SHA256SUMS</code>; keeps the staged engine if not</li></ul></td><td class="tb">Unit (<code>host_test.go</code>, <code>update_test.go</code>)</td></tr>
     <tr data-id="A8" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">A8</td><td><b>New-release notice on <code>vdb start</code></b><ul class="subs">
       <li class="ok">Background check, 1.5 s limit, printed last</li><li class="ok">Only a promoted, newer, complete release</li>
       <li class="ok">One request, answer remembered 6 h (GitHub throttles asset downloads)</li><li class="ok">Off switch; never on dev builds; silent offline</li></ul></td><td class="tb">Unit; update §1, §1b, §2, §3, §8; real Mac check</td></tr>
@@ -492,7 +494,8 @@
       <li class="ok">Binaries for 5 platforms + vdb-verify</li><li class="ok">SHA256SUMS merged safely between jobs</li>
       <li class="ok">Fails unless <code>vdb update</code>'s files are published</li><li class="ok">Multi-arch Postgres image on GHCR</li></ul></td><td class="tb">Script tests in CI</td></tr>
     <tr data-id="M5" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">M5</td><td><b>WSL distro &amp; ZFS builds</b><ul class="subs">
-      <li class="ok">Prebuilt distro image</li><li class="todo">Used by the installer</li><li class="todo">Preloaded image tag fixed</li></ul></td><td class="tb">Actions artifacts</td></tr>
+      <li class="ok">Prebuilt distro image</li><li class="ok">Downloaded and verified by the installer</li><li class="ok">Preloaded image tagged as the engine runs it</li>
+      <li class="part">685 MB download (rootfs fallback covers failures)</li></ul></td><td class="tb">Actions artifacts; Pester</td></tr>
     <tr data-id="M6" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">M6</td><td><b>Postgres image</b><ul class="subs">
       <li class="ok">Postgres 16 + wal-g</li><li class="todo">pgvector</li></ul></td><td class="tb">Manual</td></tr>
   </table>
