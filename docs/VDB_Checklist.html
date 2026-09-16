@@ -181,7 +181,7 @@
       <li class="ok">Downloads and verifies everything before changing anything</li><li class="ok">Stops servers, installs engine, restarts old one on failure</li>
       <li class="ok"><code>up</code>, Blackbox upgrade, <code>start</code> on the new engine</li><li class="ok">Replaces host <code>vdb</code>, keeps previous binaries</li>
       <li class="ok"><code>--check</code>, <code>--yes</code>, <code>--version</code></li><li class="ok">Linux path verified end to end</li>
-      <li class="ok">macOS path run against a real release (v0.8.3 → v0.8.4)</li><li class="todo">Windows path run against a real release</li>
+      <li class="ok">macOS path run against real releases (v0.8.3 → v0.8.4 → v0.8.5)</li><li class="todo">Windows path run against a real release (deferred)</li>
       <li class="todo">Release signatures</li></ul></td><td class="tb">Unit; update §4–§7; a real Mac run</td></tr>
   </table>
 </section>
@@ -464,12 +464,15 @@
       <li class="ok">Create, copy, list, revoke</li></ul></td><td class="tb">Manual</td></tr>
     <tr data-id="L7" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">L7</td><td><b>Landing, Guide &amp; Docs pages</b><ul class="subs">
       <li class="ok">Landing, developer guide, reference</li><li class="todo">Refresh stale content (https, sslmode, MCP, Blackbox, import routes)</li></ul></td><td class="tb">Manual</td></tr>
-    <tr data-id="L8" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">L8</td><td><b>Blackbox integrity page</b><ul class="subs">
-      <li class="ok">Verify, checkpoint, export, branch-before</li><li class="todo">Used in a browser against a running stack</li></ul></td><td class="tb">Type-check + build</td></tr>
-    <tr data-id="L9" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">L9</td><td><b>Policies page</b><ul class="subs">
-      <li class="ok">Rules, warn/block, custom rules, preview, evaluations</li><li class="todo">Used in a browser against a running stack</li></ul></td><td class="tb">Type-check + build; API in v2 §6</td></tr>
-    <tr data-id="L10" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">L10</td><td><b>App sidebar layout</b><ul class="subs">
-      <li class="ok">Grouped sidebar, collapse, mobile drawer</li><li class="todo">Reviewed in a browser while signed in</li></ul></td><td class="tb">Type-check + build; served preview</td></tr>
+    <tr data-id="L8" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">L8</td><td><b>Blackbox integrity page</b><ul class="subs">
+      <li class="ok">Verify, checkpoint, export, branch-before</li><li class="ok">Used signed in; every result matched the CLI</li>
+      <li class="part">Entry list needs a refresh to show a new change</li></ul></td><td class="tb">Type-check + build; browser review 16 Sep</td></tr>
+    <tr data-id="L9" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">L9</td><td><b>Policies page</b><ul class="subs">
+      <li class="ok">Rules, warn/block, custom rules, preview, evaluations</li><li class="ok">Used signed in; matched the CLI, wrote only to the chosen branch</li>
+      <li class="ok">Non-admin change refused with a readable message</li></ul></td><td class="tb">Type-check + build; API in v2 §6; browser review 16 Sep</td></tr>
+    <tr data-id="L10" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">L10</td><td><b>App sidebar layout</b><ul class="subs">
+      <li class="ok">Every link opens its page, highlighted, with breadcrumb</li><li class="ok">Collapse persists across a reload; theme toggle persists</li>
+      <li class="ok">No console errors on any page</li><li class="todo">Under-860px drawer (needs a manual look)</li></ul></td><td class="tb">Type-check + build; browser review 16 Sep</td></tr>
   </table>
 </section>
 
