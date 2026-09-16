@@ -158,7 +158,7 @@
       <li class="ok">Installs WSL, elevates, resumes after reboot</li><li class="ok">Downloads vdb.exe, engine, image build context</li>
       <li class="ok">Ubuntu rootfs verified against Ubuntu's checksums</li><li class="ok">Adds to PATH and runs <code>vdb setup</code></li>
       <li class="ok">Prefers the prebuilt distro image, falls back to the rootfs</li><li class="ok">Verifies VectoraDB's own downloads</li>
-      <li class="todo">Run on a real Windows machine</li></ul></td><td class="tb">Pester unit tests (Windows CI)</td></tr>
+      <li class="ok">Run on a real Windows machine (distro image downloaded and verified)</li></ul></td><td class="tb">Pester (Windows CI); Windows run 16 Sep</td></tr>
     <tr data-id="A3" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">A3</td><td><b><code>vdb setup</code> on macOS (Lima)</b><ul class="subs">
       <li class="ok">Creates / starts the Lima VM</li><li class="ok">Installs Docker and ZFS</li>
       <li class="ok">Reinstalls the engine on every run</li><li class="ok">Starts the stack</li>
@@ -167,7 +167,7 @@
       <li class="ok">Imports a dedicated distro with systemd</li><li class="ok">Docker, btrfs and a storage mount unit</li>
       <li class="ok">Quiet steps, detail in install.log</li><li class="ok">Waits for systemd on a cold distro</li>
       <li class="ok">Preloaded images tagged as the engine runs them</li><li class="ok">Summary with API key and <code>sslmode</code></li>
-      <li class="todo">Run on a real Windows machine</li></ul></td><td class="tb">Unit (<code>host_wsl_test.go</code>); manual on Windows</td></tr>
+      <li class="todo">Run from a release, on a fresh distro (not yet exercised)</li></ul></td><td class="tb">Unit (<code>host_wsl_test.go</code>); manual on Windows</td></tr>
     <tr data-id="A5" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">A5</td><td><b>Linux native</b><ul class="subs">
       <li class="ok">Engine runs in-process, no VM</li><li class="ok"><code>vdb setup</code> explains nothing is needed</li></ul></td><td class="tb">VM integration (all suites run on Linux)</td></tr>
     <tr data-id="A6" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">A6</td><td><b>Command forwarding &amp; host file streaming</b><ul class="subs">
@@ -494,7 +494,7 @@
       <li class="ok">Binaries for 5 platforms + vdb-verify</li><li class="ok">SHA256SUMS merged safely between jobs</li>
       <li class="ok">Fails unless <code>vdb update</code>'s files are published</li><li class="ok">Multi-arch Postgres image on GHCR</li></ul></td><td class="tb">Script tests in CI</td></tr>
     <tr data-id="M5" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">M5</td><td><b>WSL distro &amp; ZFS builds</b><ul class="subs">
-      <li class="ok">Prebuilt distro image</li><li class="ok">Downloaded and verified by the installer</li><li class="ok">Preloaded image tagged as the engine runs it</li>
+      <li class="ok">Prebuilt distro image</li><li class="ok">Downloaded and verified by the installer (seen on Windows)</li><li class="ok">Preloaded image tagged as the engine runs it</li>
       <li class="part">685 MB download (rootfs fallback covers failures)</li></ul></td><td class="tb">Actions artifacts; Pester</td></tr>
     <tr data-id="M6" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">M6</td><td><b>Postgres image</b><ul class="subs">
       <li class="ok">Postgres 16 + wal-g</li><li class="todo">pgvector</li></ul></td><td class="tb">Manual</td></tr>

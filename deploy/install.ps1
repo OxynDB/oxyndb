@@ -387,10 +387,12 @@ function Invoke-Install {
         throw "vdb setup failed. See $Prefix\install.log, then re-run:  vdb setup"
     }
 
+    # `vdb setup` already printed the "VectoraDB is running" summary, including
+    # the connection string with the API key. Repeating it here only made the
+    # install end with two near-identical blocks, so add the one thing the
+    # engine cannot know: where this installer put its log.
     Write-Host ""
-    Write-Host "VectoraDB is running." -ForegroundColor Green
-    Write-Host "  Try:  vdb status"
-    Write-Host "  Log:  $Prefix\install.log"
+    Write-Host "  Installer log: $Prefix\install.log"
 }
 
 # Run only when executed/piped -- not when dot-sourced by tests.
