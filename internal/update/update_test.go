@@ -173,6 +173,7 @@ type fakeGitHub struct {
 	files    map[string][]byte // path -> content
 	delay    time.Duration
 	lists    atomic.Int32
+	assets   atomic.Int32 // asset downloads (SHA256SUMS, binaries)
 }
 
 func newFakeGitHub(t *testing.T) *fakeGitHub {
@@ -192,6 +193,7 @@ func newFakeGitHub(t *testing.T) *fakeGitHub {
 			return
 		}
 		if b, ok := f.files[r.URL.Path]; ok {
+			f.assets.Add(1)
 			w.Write(b)
 			return
 		}
@@ -329,6 +331,79 @@ func TestBackgroundCheck(t *testing.T) {
 	}, "")
 	if got := BackgroundCheck(off, "0.98.0", linux, time.Second)(); got != "" {
 		t.Fatalf("offline check printed %q", got)
+	}
+}
+
+// The start-time check must not download release assets: GitHub throttles
+// repeated downloads of the same asset (seconds to a minute), which kept the
+// notice silent. The update path must still verify against SHA256SUMS.
+func TestAvailableMakesNoAssetRequests(t *testing.T) {
+	f := newFakeGitHub(t)
+	linux := Target{GOOS: "linux", HostArch: "amd64"}
+	f.publish("v0.99.0", map[string]string{"vdb-linux-amd64": "new"})
+	c := f.client("")
+	ctx := context.Background()
+
+	o, err := c.Available(ctx, mustVersion(t, "0.98.0"), linux)
+	if err != nil || o == nil || o.Release.Tag != "v0.99.0" {
+		t.Fatalf("available = %v, %v", o, err)
+	}
+	if o.Sums != nil {
+		t.Error("the notice check downloaded SHA256SUMS")
+	}
+	if n := f.assets.Load(); n != 0 {
+		t.Fatalf("the notice check made %d asset request(s), want 0", n)
+	}
+	if o, err := c.Available(ctx, mustVersion(t, "0.99.0"), linux); err != nil || o != nil {
+		t.Fatalf("up to date: %v, %v", o, err)
+	}
+	if _, err := c.Resolve(ctx, mustVersion(t, "0.98.0"), linux, ""); err != nil {
+		t.Fatal(err)
+	}
+	if f.assets.Load() == 0 {
+		t.Error("the update path didn't download SHA256SUMS")
+	}
+}
+
+func TestNoticeIsRememberedBetweenStarts(t *testing.T) {
+	f := newFakeGitHub(t)
+	linux := Target{GOOS: "linux", HostArch: "amd64"}
+	f.publish("v0.99.0", map[string]string{"vdb-linux-amd64": "new"})
+	c := f.client(filepath.Join(t.TempDir(), "update-check.json"))
+
+	first := BackgroundCheck(c, "0.98.0", linux, 5*time.Second)()
+	if !strings.Contains(first, "v0.99.0 is available") {
+		t.Fatalf("notice %q", first)
+	}
+	calls := f.lists.Load()
+	if got := BackgroundCheck(c, "0.98.0", linux, 5*time.Second)(); got != first {
+		t.Fatalf("remembered notice = %q, want %q", got, first)
+	}
+	if f.lists.Load() != calls {
+		t.Error("the remembered check still asked GitHub")
+	}
+	// After an update the installed version differs, so the answer is refetched.
+	if got := BackgroundCheck(c, "0.99.0", linux, 5*time.Second)(); got != "" {
+		t.Errorf("after updating, notice = %q", got)
+	}
+	if f.lists.Load() == calls {
+		t.Error("a different installed version reused the cache")
+	}
+	// "up to date" is remembered too.
+	calls = f.lists.Load()
+	if got := BackgroundCheck(c, "0.99.0", linux, 5*time.Second)(); got != "" || f.lists.Load() != calls {
+		t.Error("an up-to-date answer wasn't remembered")
+	}
+	// Interval 0 checks on every start.
+	t.Setenv(EnvCheckInterval, "0")
+	calls = f.lists.Load()
+	_ = BackgroundCheck(c, "0.99.0", linux, 5*time.Second)()
+	if f.lists.Load() == calls {
+		t.Error("interval 0 used the cache")
+	}
+	if CheckInterval(func(string) string { return "" }) != 6*time.Hour ||
+		CheckInterval(func(string) string { return "30m" }) != 30*time.Minute {
+		t.Error("CheckInterval")
 	}
 }
 

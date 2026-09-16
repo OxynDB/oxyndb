@@ -124,7 +124,34 @@ func Candidates(rels []Release, current Version, t Target, pin string) ([]Releas
 	return out, nil
 }
 
-// Offer is a release ready to install, with its verified checksum list.
+// Available is the check `vdb start` makes: the newest release worth telling the
+// user about, or nil when this install is up to date.
+//
+// It uses the releases list alone — one request — and does NOT download
+// SHA256SUMS. GitHub throttles repeated downloads of the same release asset
+// hard (measured on 15 Sep 2026: the same SHA256SUMS took 0.5 s once, then 7–75 s
+// on later requests from the same machine), so fetching it on every start made
+// the notice miss its budget and stay silent. The offer it returns therefore has
+// no Sums; `vdb update` calls Resolve, which downloads SHA256SUMS and verifies
+// every file before anything is installed.
+func (c *Client) Available(ctx context.Context, current Version, t Target) (*Offer, error) {
+	rels, err := c.ListReleases(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cands, err := Candidates(rels, current, t, "")
+	if err != nil || len(cands) == 0 {
+		return nil, err
+	}
+	v, err := ParseVersion(cands[0].Tag)
+	if err != nil {
+		return nil, err
+	}
+	return &Offer{Release: cands[0], Version: v, Required: RequiredAssets(t)}, nil
+}
+
+// Offer is a release ready to install. Sums is filled in by Resolve (the update
+// path) and empty for the start-time notice (see Available).
 type Offer struct {
 	Release  Release
 	Version  Version
