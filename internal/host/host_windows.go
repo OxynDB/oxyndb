@@ -285,9 +285,32 @@ func finishSetup(name string) error {
 	fmt.Println()
 	fmt.Println("VectoraDB is running.")
 	fmt.Println("  Try:      vdb status")
-	fmt.Println("  Connect:  postgres://vectoradb@localhost:6432/main")
+	// The first start mints a local API key and caches it in the guest; the
+	// gateway needs it as the password, so print the string that actually works.
+	if key := guestAPIKey(name); key != "" {
+		fmt.Printf("  Connect:  postgresql://vectoradb:%s@localhost:6432/main?sslmode=require\n", key)
+	} else {
+		fmt.Println("  Connect:  postgresql://vectoradb:<API_KEY>@localhost:6432/main?sslmode=require")
+		fmt.Println("            (the key is in ~/.vectoradb/config inside the distro)")
+	}
 	fmt.Println("  Log:      " + setupLogPath())
 	return nil
+}
+
+// guestAPIKey reads the local API key the engine's first start cached inside the
+// distro (~/.vectoradb/config). Returns "" when it isn't there yet — accounts may
+// already exist, in which case no key is cached and the summary says so.
+func guestAPIKey(name string) string {
+	out, err := wslRootOut(name, "cat ~/.vectoradb/config 2>/dev/null || true")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(decodeWSLOutput(out), "\n") {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(line), "api_key="); ok {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
 }
 
 // shareMountPropagation puts the pool's mounts under shared propagation, once
@@ -404,7 +427,11 @@ func loadPreloadedImages(name string) error {
 		return nil
 	}
 	step("Loading the preinstalled container images")
-	if err := wslRoot(name, fmt.Sprintf("set -e; docker load -i %q", tar)); err != nil {
+	// Distro images built before 16 Sep 2026 tag Postgres `vectoradb/postgres-walg:16`,
+	// which the engine never looks for — re-tag it so the preload is actually used.
+	retag := "; docker image inspect vectoradb/postgres-walg:16 >/dev/null 2>&1 && " +
+		"docker tag vectoradb/postgres-walg:16 ghcr.io/vectoradb/postgres-walg:16 || true"
+	if err := wslRoot(name, fmt.Sprintf("set -e; docker load -i %q", tar)+retag); err != nil {
 		// Not fatal: the engine can still build and pull. Losing the fast path
 		// is better than failing an install over it.
 		logf("loading preinstalled images failed, falling back to build/pull: %v\n", err)
@@ -490,9 +517,9 @@ func checkStorageUnit(name string) error {
 	if strings.TrimSpace(decodeWSLOutput(out)) == "active" {
 		return nil
 	}
-	detail, _ := wslRootOut(name, "systemctl status vectoradb-zpool.service --no-pager -l 2>&1 | tail -n 12 || true")
-	return fmt.Errorf("the VectoraDB ZFS pool device is not ready in the %q distro.\n"+
-		"Refusing to continue: the engine would create a new pool and could overwrite existing data.\n\n%s",
+	detail, _ := wslRootOut(name, "systemctl status vectoradb-storage.service --no-pager -l 2>&1 | tail -n 12 || true")
+	return fmt.Errorf("the VectoraDB btrfs filesystem is not mounted in the %q distro.\n"+
+		"Refusing to continue: the engine would write into the empty mount point, and the next boot would hide that data.\n\n%s",
 		name, strings.TrimSpace(decodeWSLOutput(detail)))
 }
 

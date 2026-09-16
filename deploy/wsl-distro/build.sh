@@ -108,11 +108,14 @@ prepare_images() {
 	# test keeps these names in step with it).
 	local minio_image="quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
 	local mc_image="quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z"
-	docker build -t vectoradb/postgres-walg:16 "$repo/docker/postgres"
+	# Tagged with the name the engine runs (internal/branch/branch.go `image`):
+	# a preload under any other name is ignored, and `vdb setup` pulls or builds
+	# the image anyway — which is what this whole step exists to avoid.
+	docker build -t ghcr.io/vectoradb/postgres-walg:16 "$repo/docker/postgres"
 	docker pull -q "$minio_image"
 	docker pull -q "$mc_image"
 	docker save -o "$work/vectoradb-images.tar" \
-		vectoradb/postgres-walg:16 "$minio_image" "$mc_image"
+		ghcr.io/vectoradb/postgres-walg:16 "$minio_image" "$mc_image"
 	timer "images" "$t"
 }
 

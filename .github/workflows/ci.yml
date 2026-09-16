@@ -31,6 +31,9 @@ jobs:
       # The release job's check that every file `vdb update` needs was published.
       - name: Release assets for vdb update
         run: bash scripts/test_check_release_assets.sh
+      # The installer must refuse anything it cannot check against SHA256SUMS.
+      - name: Installer verification
+        run: bash scripts/test_install_sh.sh
       # docs/VDB_Checklist.html must list exactly the features in VDB_Feature_Implemented.html.
       - name: Feature checklist in step
         run: bash scripts/test_feature_checklist.sh

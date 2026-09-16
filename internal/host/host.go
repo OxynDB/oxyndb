@@ -15,6 +15,7 @@
 package host
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,6 +24,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/vectoradb/vectoradb/internal/update"
 )
 
 // Guest environment variable marks a vdb process that is already running inside
@@ -185,26 +188,63 @@ func refreshEngineBinary(arch string) string {
 	if v := os.Getenv("VECTORADB_NO_REFRESH"); v == "1" || v == "true" {
 		return ""
 	}
-	repo := envOr("VDB_REPO", "vectoradb/vectoraDB")
-	version := envOr("VDB_VERSION", "latest")
 	asset := "vdb-linux-" + arch
-	url := fmt.Sprintf("https://github.com/%s/releases/latest/download/%s", repo, asset)
-	if version != "latest" {
-		url = fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repo, version, asset)
+	dest := filepath.Join(cacheDir(), asset)
+	fmt.Println("Checking for the latest engine build…")
+
+	if truthyEnv("VDB_NO_VERIFY") {
+		// Deliberately unverified (an air-gapped mirror, or a release whose
+		// checksums are unreachable). Same behaviour as before verification.
+		fmt.Println("note: VDB_NO_VERIFY is set — the engine download will not be checked against SHA256SUMS.")
+		url := fmt.Sprintf("https://github.com/%s/releases/latest/download/%s", envOr("VDB_REPO", "vectoradb/vectoraDB"), asset)
+		if v := envOr("VDB_VERSION", "latest"); v != "latest" {
+			url = fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", envOr("VDB_REPO", "vectoradb/vectoraDB"), v, asset)
+		}
+		if err := downloadFile(url, dest); err != nil || !isELF(dest) {
+			_ = os.Remove(dest)
+			fmt.Println("note: could not fetch a usable build — using the installed one.")
+			return ""
+		}
+		return dest
 	}
 
-	fmt.Println("Checking for the latest engine build…")
-	dest := filepath.Join(cacheDir(), asset)
-	if err := downloadFile(url, dest); err != nil {
-		fmt.Printf("note: could not fetch the latest build (%v) — using the installed one.\n", err)
+	// The engine is installed into the VM and run as root, so it is downloaded
+	// through the same verified path as `vdb update`: the release's SHA256SUMS
+	// decides, and a file that doesn't match is never kept.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	c := update.NewClient(os.Getenv, filepath.Join(cacheDir(), "update-check.json"))
+	keep := func(format string, a ...any) string {
+		fmt.Printf("note: "+format+" — using the engine the installer staged.\n", a...)
 		return ""
 	}
-	if !isELF(dest) { // a 404 page or truncated download, not a Linux binary
-		_ = os.Remove(dest)
-		fmt.Println("note: the downloaded build looks invalid — using the installed one.")
-		return ""
+	offer, err := c.Release(ctx, envOr("VDB_VERSION", "latest"), update.Target{GOOS: "linux", HostArch: arch})
+	if err != nil {
+		return keep("could not read the release (%v)", err)
 	}
-	return dest
+	a, ok := offer.Release.Asset(asset)
+	if !ok {
+		return keep("release %s has no %s", offer.Release.Tag, asset)
+	}
+	path, err := c.Download(ctx, a, offer.Sums[asset], cacheDir())
+	if err != nil {
+		return keep("%v", err)
+	}
+	if !isELF(path) { // verified bytes, but not a Linux binary
+		_ = os.Remove(path)
+		return keep("%s in release %s is not a Linux binary", asset, offer.Release.Tag)
+	}
+	fmt.Printf("Engine %s from %s verified against SHA256SUMS.\n", asset, offer.Release.Tag)
+	return path
+}
+
+// truthyEnv reports whether an env var is set to an on-ish value.
+func truthyEnv(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 func envOr(key, def string) string {
