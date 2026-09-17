@@ -103,7 +103,7 @@
   <div class="meta">
     <b>What this is:</b> every VectoraDB feature and its sub-features — built or not, and how it was tested — so it's clear where we are and what's next.
     How each feature works is in <code>VDB_Feature_Implemented.pdf</code> (same ids).<br>
-    <b>Last updated:</b> 18 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>8f6c7f6</code> (v0.8.7, Blackbox page &amp; small gaps PR #43) + the durability gaps (<code>feat/durability-gaps</code>)<br>
+    <b>Last updated:</b> 18 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>8575866</code> (v0.8.7, attribution &amp; MCP authentication PR #45) + the console value fix (<code>fix/console-uuid-cells</code>)<br>
     <b>Source:</b> <code>docs/VDB_Checklist.html</code> → <code>make feature-doc</code> → this PDF
   </div>
 
@@ -465,7 +465,7 @@
     <tr data-id="L3" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">L3</td><td><b>Dashboard</b><ul class="subs">
       <li class="ok">Live tiles</li><li class="ok">Branch table: create, suspend, resume, delete, copy DSN</li></ul></td><td class="tb">Manual</td></tr>
     <tr data-id="L4" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">L4</td><td><b>SQL console &amp; browser</b><ul class="subs">
-      <li class="ok">Schema sidebar, rows, structure, indexes</li><li class="ok">SQL editor</li><li class="ok">System tables hidden by default, with a show button</li><li class="ok">Runs as the signed-in user; one-run override switch</li><li class="ok">Per-rule override for policy blocks</li></ul></td><td class="tb">Manual; API in v2 §6</td></tr>
+      <li class="ok">Schema sidebar, rows, structure, indexes</li><li class="ok">Values shown as Postgres writes them (uuid, interval, inet, bytea)</li><li class="ok">SQL editor</li><li class="ok">System tables hidden by default, with a show button</li><li class="ok">Runs as the signed-in user; one-run override switch</li><li class="ok">Per-rule override for policy blocks</li></ul></td><td class="tb">Manual; API in v2 §6</td></tr>
     <tr data-id="L5" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">L5</td><td><b>Blackbox page</b><ul class="subs">
       <li class="ok">Entries per branch with badges</li><li class="ok">Table / risk / date filters, and "Clear filters"</li><li class="ok">Verify button; a row expands to its statement and session</li></ul></td><td class="tb">v2 §5b; browser</td></tr>
     <tr data-id="L6" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">L6</td><td><b>API keys page</b><ul class="subs">
