@@ -103,7 +103,7 @@
   <div class="meta">
     <b>What this is:</b> every VectoraDB feature and its sub-features — built or not, and how it was tested — so it's clear where we are and what's next.
     How each feature works is in <code>VDB_Feature_Implemented.pdf</code> (same ids).<br>
-    <b>Last updated:</b> 16 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>c71ce45</code> (v0.8.5) + docs &amp; API accuracy (<code>docs/api-accuracy</code>)<br>
+    <b>Last updated:</b> 16 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>c71ce45</code> (v0.8.5) + agent reachability (<code>fix/agent-reachability</code>)<br>
     <b>Source:</b> <code>docs/VDB_Checklist.html</code> → <code>make feature-doc</code> → this PDF
   </div>
 
@@ -439,9 +439,9 @@
       <li class="ok">Branches, query, Blackbox</li><li class="todo">Import, pipelines, keys, agents</li><li class="todo">Tests</li><li class="todo">Publish to PyPI</li></ul></td><td class="tb">Manual</td></tr>
     <tr data-id="K4" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">K4</td><td><b>TypeScript SDK</b><ul class="subs">
       <li class="ok">Same client for Node and browsers</li><li class="todo">Tests</li><li class="todo">Publish to npm</li></ul></td><td class="tb">Manual</td></tr>
-    <tr data-id="K5" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">K5</td><td><b>Agent Branch API</b><ul class="subs">
+    <tr data-id="K5" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">K5</td><td><b>Agent Branch API</b><ul class="subs">
       <li class="ok">A branch per agent, own non-superuser role</li><li class="ok">Provenance (task, parent, session)</li>
-      <li class="part">DSN only reachable inside the VM</li><li class="part">Cap and TTL count only running branches</li></ul></td><td class="tb">VM §5; v2 §1c, §7</td></tr>
+      <li class="ok">DSN reachable from the host (gateway-routed, branch-scoped key)</li><li class="ok">Cap, listing and TTL count suspended branches</li></ul></td><td class="tb">Unit; VM §5; v2 §1c, §7</td></tr>
     <tr data-id="K6" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">K6</td><td><b>MCP server</b><ul class="subs">
       <li class="ok">Branches, run_sql, Blackbox tools</li><li class="ok">policy_check, execute_change, impact, diff</li>
       <li class="todo">Authentication</li><li class="ok">Client config &amp; 16-tool reference (docs/mcp.md)</li></ul></td><td class="tb">Unit; v2 §1c–§8</td></tr>

@@ -103,6 +103,17 @@ assert_eq "agent DSN logs in as the agent's own role" \
 assert_eq "agent role is not a superuser" "$(psql "$DSN" -tAc "SELECT rolsuper FROM pg_roles WHERE rolname=session_user" 2>/dev/null)" "f"
 psql "$DSN" -c "CREATE TABLE a(x int); INSERT INTO a VALUES (7);" >/dev/null 2>&1
 assert_eq "agent DB is usable via its DSN" "$(psql "$DSN" -tAc 'SELECT x FROM a' 2>/dev/null)" "7"
+# K5: the DSN now goes through the gateway (so it works from the host too) and
+# its password is a key scoped to this one branch.
+AKEY="$(python3 -c 'import sys,urllib.parse;print(urllib.parse.urlparse(sys.argv[1]).password or "")' "$DSN")"
+assert_eq "agent DSN routes through the gateway" \
+  "$(python3 -c 'import sys,urllib.parse;print(urllib.parse.urlparse(sys.argv[1]).port)' "$DSN")" "6432"
+assert_eq "the agent's key cannot open another branch" \
+  "$(PGPASSWORD="$AKEY" psql "postgresql://agent-v2itest@127.0.0.1:6432/main?sslmode=require" -tAc 'SELECT 1' 2>&1 | grep -c 'only opens branch')" "1"
+assert_eq "the agent's key is refused by the control plane" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $AKEY" https://localhost:8080/api/branches)" "401"
+assert_eq "the agent's key is refused by the agent API" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $AKEY" https://localhost:8088/agents)" "401"
 assert_eq "agent change attributed to the agent" \
   "$(pg vec-agent-v2itest "SELECT actor||'/'||actor_kind FROM vdb.schema_ledger WHERE command_tag='CREATE TABLE' AND object_identity='public.a'")" "agent-v2itest/agent"
 assert_eq "agent cannot disable triggers (session_replication_role)" \

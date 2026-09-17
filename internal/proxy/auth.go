@@ -86,7 +86,11 @@ func writeAuthOk(client net.Conn) error {
 // (and including) AuthenticationOk, leaving the connection positioned right
 // before the backend's ParameterStatus/BackendKeyData/ReadyForQuery messages —
 // which the caller then pipes straight through to the client.
-func backendAuth(backend net.Conn, params map[string]string) error {
+//
+// password is the credential for params["user"]: the per-install secret for an
+// ordinary client (backendPassword), or a branch's derived agent password when
+// the Gateway logs in as that branch's own agent role.
+func backendAuth(backend net.Conn, params map[string]string, password string) error {
 	if _, err := backend.Write(buildStartup(params)); err != nil {
 		return err
 	}
@@ -105,19 +109,19 @@ func backendAuth(backend net.Conn, params map[string]string) error {
 		case 0: // AuthenticationOk
 			return nil
 		case 3: // cleartext password
-			if err := writeMsg(backend, 'p', append([]byte(backendPassword()), 0)); err != nil {
+			if err := writeMsg(backend, 'p', append([]byte(password), 0)); err != nil {
 				return err
 			}
 		case 5: // md5 password
 			if len(body) < 8 {
 				return fmt.Errorf("short md5 auth message")
 			}
-			token := md5Password(params["user"], backendPassword(), body[4:8])
+			token := md5Password(params["user"], password, body[4:8])
 			if err := writeMsg(backend, 'p', append([]byte(token), 0)); err != nil {
 				return err
 			}
 		case 10: // SASL (SCRAM-SHA-256)
-			if err := scramSHA256(backend, body[4:], backendPassword()); err != nil {
+			if err := scramSHA256(backend, body[4:], password); err != nil {
 				return err
 			}
 		default:

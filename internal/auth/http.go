@@ -52,7 +52,10 @@ func (s *Store) userFromRequest(r *http.Request) (User, bool) {
 		key = r.Header.Get("X-API-Key")
 	}
 	if key != "" {
-		if u, ok := s.VerifyKey(key); ok {
+		// A scoped key opens one branch through the Gateway and nothing else, so
+		// it must not authenticate an HTTP request: that would hand an agent the
+		// control plane, and with it every branch its owner can reach.
+		if u, scope, ok := s.VerifyKey(key); ok && scope == "" {
 			return u, true
 		}
 	}

@@ -51,10 +51,16 @@ Branches — a branch is a copy-on-write clone of `main`, created in seconds:
 
 | Tool | What it does | Arguments |
 |---|---|---|
-| `create_branch` | Creates an isolated database for an agent and returns its DSN | `agent_id` (required) |
+| `create_branch` | Creates an isolated database for an agent and returns a DSN it can connect to | `agent_id` (required) |
 | `list_branches` | Lists the active agent branches and their DSNs | — |
 | `delete_branch` | Deletes an agent's branch and all its data | `agent_id` (required) |
 | `run_sql` | Runs SQL on a branch and returns the result | `sql` (required), `branch` |
+
+The DSN from `create_branch` goes through the gateway, so it works from the
+machine the agent runs on, not only inside the VM. Its password is an API key
+scoped to that one branch: it opens no other branch, and the control plane and
+the Agent Branch API both refuse it. The key is shown once, at creation —
+`list_branches` returns the DSN without it — and deleting the branch revokes it.
 
 Blackbox — the tamper-evident record of every schema change:
 

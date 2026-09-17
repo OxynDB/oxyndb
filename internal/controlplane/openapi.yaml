@@ -884,10 +884,18 @@ components:
       properties:
         agent: { type: string }
         branch: { type: string }
-        host: { type: string }
-        port: { type: string }
-        dsn: { type: string }
-        status: { type: string }
+        host: { type: string, description: "The Gateway's host: an agent connects through it, not to the branch's container." }
+        port: { type: string, description: "The Gateway's port (6432 by default)." }
+        dsn:
+          type: string
+          description: >-
+            Connection string for this branch, routed through the Gateway, so it
+            is reachable from the host and not only from inside the VM. The
+            password is an API key scoped to this one branch: it opens no other
+            branch, and the control plane and this API both refuse it. Returned
+            once, at creation — listings omit the key — and revoked when the
+            branch is deleted.
+        status: { type: string, description: "ready, or suspended when the branch's container is stopped (the Gateway wakes it on connect)." }
     QueryResult:
       type: object
       properties:

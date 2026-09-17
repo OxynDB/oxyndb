@@ -60,7 +60,8 @@ CREATE TABLE IF NOT EXISTS users (
 );
 CREATE TABLE IF NOT EXISTS api_keys (
   id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, name TEXT NOT NULL,
-  key_hash TEXT NOT NULL, prefix TEXT NOT NULL, created INTEGER NOT NULL, last_used INTEGER
+  key_hash TEXT NOT NULL, prefix TEXT NOT NULL, created INTEGER NOT NULL, last_used INTEGER,
+  scope TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires INTEGER NOT NULL
@@ -98,7 +99,46 @@ func Open(cfg Config) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := migrate(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &Store{db: db, cfg: cfg}, nil
+}
+
+// migrate applies what the CREATE TABLE statements above cannot: they run with
+// IF NOT EXISTS, so an existing install keeps the columns it was created with.
+// Every step must be safe to repeat on each open.
+func migrate(db *sql.DB) error {
+	has, err := hasColumn(db, "api_keys", "scope")
+	if err != nil {
+		return err
+	}
+	if !has {
+		// Existing keys are unscoped, which is what the empty default means.
+		if _, err := db.Exec(`ALTER TABLE api_keys ADD COLUMN scope TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func hasColumn(db *sql.DB, table, column string) (bool, error) {
+	rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, table)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 // Close releases the underlying database handle.
@@ -235,38 +275,81 @@ type KeyInfo struct {
 	Name    string `json:"name"`
 	Prefix  string `json:"prefix"`
 	Created int64  `json:"created"`
+	// Scope is empty for an ordinary account key. A non-empty scope names the
+	// one branch the key may open through the Gateway, and such a key is
+	// refused everywhere else (see Authn).
+	Scope string `json:"scope,omitempty"`
 }
 
 func hashKey(k string) string { h := sha256.Sum256([]byte(k)); return hex.EncodeToString(h[:]) }
 
 // CreateAPIKey returns the full secret (shown once) plus its stored metadata.
+// The key is unscoped: it carries the owner's full access.
 func (s *Store) CreateAPIKey(userID int64, name string) (string, KeyInfo, error) {
+	return s.CreateScopedAPIKey(userID, name, "")
+}
+
+// CreateScopedAPIKey mints a key that may open exactly one branch through the
+// Gateway and nothing else — no control-plane and no Agent API access (Authn
+// refuses it). This is what an agent is handed with its branch, so a leaked
+// agent credential cannot reach another agent's data, the account, or the
+// branches that account owns. An empty scope mints an ordinary account key.
+func (s *Store) CreateScopedAPIKey(userID int64, name, scope string) (string, KeyInfo, error) {
 	if strings.TrimSpace(name) == "" {
 		name = "key"
 	}
+	scope = strings.TrimSpace(scope)
 	secret := "vdb_" + randToken(24)
 	id := randToken(8)
 	prefix := secret[:12]
 	now := time.Now().Unix()
-	if _, err := s.db.Exec(`INSERT INTO api_keys(id,user_id,name,key_hash,prefix,created) VALUES(?,?,?,?,?,?)`,
-		id, userID, name, hashKey(secret), prefix, now); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO api_keys(id,user_id,name,key_hash,prefix,created,scope) VALUES(?,?,?,?,?,?,?)`,
+		id, userID, name, hashKey(secret), prefix, now, scope); err != nil {
 		return "", KeyInfo{}, err
 	}
-	return secret, KeyInfo{ID: id, Name: name, Prefix: prefix, Created: now}, nil
+	return secret, KeyInfo{ID: id, Name: name, Prefix: prefix, Created: now, Scope: scope}, nil
 }
 
-// VerifyKey resolves an API key to its user. A false result means "not
-// authenticated"; a genuine store failure (as opposed to an unknown key) is
+// AnyUserID returns some existing account's id, or false when there are none.
+// It is the owner for keys the engine mints for itself: an agent branch created
+// over MCP or the CLI has no authenticated caller, but every key needs an owner
+// so it can be listed and revoked. A scoped key carries no account access, so
+// the owner decides only who can see and revoke it.
+func (s *Store) AnyUserID() (int64, bool) {
+	var id int64
+	if err := s.db.QueryRow(`SELECT id FROM users ORDER BY id LIMIT 1`).Scan(&id); err != nil {
+		return 0, false
+	}
+	return id, true
+}
+
+// RevokeScopeKeys deletes every key scoped to one branch, so an agent's
+// credential dies with its branch. It never touches unscoped account keys.
+func (s *Store) RevokeScopeKeys(scope string) error {
+	if strings.TrimSpace(scope) == "" {
+		return nil
+	}
+	_, err := s.db.Exec(`DELETE FROM api_keys WHERE scope=?`, scope)
+	return err
+}
+
+// VerifyKey resolves an API key to its user and its scope. A false result means
+// "not authenticated"; a genuine store failure (as opposed to an unknown key) is
 // logged so it is diagnosable rather than silently masquerading as a bad key.
-func (s *Store) VerifyKey(key string) (User, bool) {
+//
+// An empty scope is an ordinary account key. A non-empty scope names the single
+// branch the key may open through the Gateway: callers must honour it — Authn
+// refuses such a key outright, and the Gateway allows it only for that branch.
+func (s *Store) VerifyKey(key string) (User, string, bool) {
 	h := hashKey(key)
 	var uid int64
-	switch err := s.db.QueryRow(`SELECT user_id FROM api_keys WHERE key_hash=?`, h).Scan(&uid); {
+	var scope string
+	switch err := s.db.QueryRow(`SELECT user_id, scope FROM api_keys WHERE key_hash=?`, h).Scan(&uid, &scope); {
 	case errors.Is(err, sql.ErrNoRows):
-		return User{}, false // no such key — an ordinary auth failure
+		return User{}, "", false // no such key — an ordinary auth failure
 	case err != nil:
 		log.Printf("auth: VerifyKey store error (client will see this as unauthenticated): %v", err)
-		return User{}, false
+		return User{}, "", false
 	}
 	// Best-effort, throttled last_used bump: only when stale (>60s), so a burst of
 	// concurrent auth checks doesn't turn into a burst of writes on the store.
@@ -276,11 +359,11 @@ func (s *Store) VerifyKey(key string) (User, bool) {
 	_, _ = s.db.Exec(`UPDATE api_keys SET last_used=? WHERE key_hash=? AND (last_used IS NULL OR last_used < ?)`,
 		now, h, now-60)
 	u, err := s.userByID(uid)
-	return u, err == nil
+	return u, scope, err == nil
 }
 
 func (s *Store) listAPIKeys(userID int64) ([]KeyInfo, error) {
-	rows, err := s.db.Query(`SELECT id,name,prefix,created FROM api_keys WHERE user_id=? ORDER BY created DESC`, userID)
+	rows, err := s.db.Query(`SELECT id,name,prefix,created,scope FROM api_keys WHERE user_id=? ORDER BY created DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -288,7 +371,7 @@ func (s *Store) listAPIKeys(userID int64) ([]KeyInfo, error) {
 	var out []KeyInfo
 	for rows.Next() {
 		var k KeyInfo
-		_ = rows.Scan(&k.ID, &k.Name, &k.Prefix, &k.Created)
+		_ = rows.Scan(&k.ID, &k.Name, &k.Prefix, &k.Created, &k.Scope)
 		out = append(out, k)
 	}
 	return out, nil

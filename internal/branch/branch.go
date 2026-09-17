@@ -695,28 +695,41 @@ func CreateAgentBranch(agentID string) (Info, error) {
 	_ = psqlStdin(name, fmt.Sprintf(
 		"ALTER DATABASE %s SET vdb.actor = '%s'; ALTER DATABASE %s SET vdb.actor_kind = 'agent';",
 		pgDatabase, actor, pgDatabase))
-	// The DSN reaches the branch over the docker network (VM-internal); a host
-	// agent should connect through the gateway. A gateway-routed, key-scoped DSN
-	// is the planned replacement.
+	// The compatibility switch keeps the old superuser DSN over the docker
+	// network, which only resolves inside the VM.
 	if AgentSuperuser() {
 		return Info{Agent: agentID, Branch: name, Host: ip, Port: "5432", DSN: dsn(ip, "5432"), Status: "ready"}, nil
 	}
 	// The agent logs in as its own non-superuser role, named like its ledger actor
 	// ("agent-<id>"): it is bound by the guardrail and the ledger's append-only
 	// protection, and its changes are attributed to an identity it cannot change.
-	password, err := randomPassword()
-	if err != nil {
-		return Info{}, err
-	}
-	if err := ensureLoginRole(name, name, password); err != nil {
+	// The role's password is derived from the install secret so the Gateway can
+	// log in as this role (see agent_access.go) without it being stored.
+	if err := ensureLoginRole(name, name, AgentRolePassword(name)); err != nil {
 		return Info{}, fmt.Errorf("creating the agent's database role: %w", err)
 	}
-	return Info{Agent: agentID, Branch: name, Host: ip, Port: "5432", DSN: agentDSN(name, password, ip, "5432"), Status: "ready"}, nil
+	// The DSN goes through the Gateway, so it works from the host as well as
+	// inside the VM, over TLS, with a key that opens this branch and nothing
+	// else. Without the key the branch would be unreachable, so a failure here
+	// takes the branch down with it rather than returning a DSN nobody can use.
+	key, err := mintAgentKey(name)
+	if err != nil {
+		_ = Delete(name)
+		return Info{}, fmt.Errorf("minting the agent's branch-scoped key: %w", err)
+	}
+	host, port := splitGatewayHostPort()
+	return Info{Agent: agentID, Branch: name, Host: host, Port: port, DSN: agentGatewayDSN(name, key), Status: "ready"}, nil
 }
 
-// DeleteAgentBranch tears down agent id's branch.
+// DeleteAgentBranch tears down agent id's branch and revokes the key issued
+// with it, so the credential cannot outlive the database it was scoped to.
+//
+// Reset deliberately does not do this: a reset keeps the branch (and so the
+// key's scope), and the agent goes on using the DSN it was given.
 func DeleteAgentBranch(agentID string) error {
-	return Delete(agentBranch(agentID))
+	name := agentBranch(agentID)
+	revokeAgentKeys(name) // best-effort; reports its own failure
+	return Delete(name)
 }
 
 // BackendAddr returns host:port where a branch's Postgres is reachable, used by
@@ -954,7 +967,10 @@ func ReapAgentBranches(maxAge time.Duration) (int, error) {
 	if maxAge <= 0 {
 		return 0, nil
 	}
-	out, err := capture("docker", "ps", "--filter", "name=vec-agent-", "--format", "{{.Names}}")
+	// -a: a suspended agent branch still holds its storage, so it must be
+	// reaped like a running one (the Gateway suspends idle branches, so an
+	// abandoned sandbox is usually stopped, not running).
+	out, err := capture("docker", "ps", "-a", "--filter", "name=vec-agent-", "--format", "{{.Names}}")
 	if err != nil {
 		return 0, err
 	}
@@ -979,25 +995,33 @@ func ReapAgentBranches(maxAge time.Duration) (int, error) {
 	return reaped, nil
 }
 
-// ListAgentBranches lists all running agent branches.
+// ListAgentBranches lists the agent branches, running or suspended. A suspended
+// branch still exists and still holds storage, and the Gateway wakes it on
+// connect, so leaving it out would hide it from the cap, from the reaper and
+// from anyone asking what exists.
 func ListAgentBranches() ([]Info, error) {
-	out, err := capture("docker", "ps", "--filter", "name=vec-agent-", "--format", "{{.Names}}")
+	out, err := capture("docker", "ps", "-a", "--filter", "name=vec-agent-", "--format", "{{.Names}}")
 	if err != nil {
 		return nil, err
 	}
 	var infos []Info
 	for _, n := range strings.Fields(out) {
 		bn := strings.TrimPrefix(n, "vec-")
-		ip, _ := containerIP(n)
-		// List the agent's own role and leave its password out — it is returned once,
-		// when the branch is created. The legacy switch keeps the old superuser DSN.
-		d := agentDSN(bn, "", ip, "5432")
+		// The DSN carries no key: it is shown once, when the branch is created.
+		// The legacy switch keeps the old superuser DSN over the docker network.
+		d := agentGatewayDSN(bn, "")
+		host, port := splitGatewayHostPort()
 		if AgentSuperuser() {
-			d = dsn(ip, "5432")
+			ip, _ := containerIP(n)
+			d, host, port = dsn(ip, "5432"), ip, "5432"
+		}
+		status := "ready"
+		if ContainerState(bn) != "running" {
+			status = "suspended"
 		}
 		infos = append(infos, Info{
 			Agent:  strings.TrimPrefix(bn, "agent-"),
-			Branch: bn, Host: ip, Port: "5432", DSN: d, Status: "ready",
+			Branch: bn, Host: host, Port: port, DSN: d, Status: status,
 		})
 	}
 	return infos, nil

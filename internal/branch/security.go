@@ -3,10 +3,7 @@
 package branch
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
-	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -35,27 +32,6 @@ func AgentSuperuser() bool { return truthyEnv("VECTORADB_AGENT_SUPERUSER") }
 
 // MCPSuperuser reports whether MCP run_sql runs as the legacy superuser.
 func MCPSuperuser() bool { return truthyEnv("VECTORADB_MCP_SUPERUSER") }
-
-// agentDSN builds a connection string for a login role, escaping the user and
-// password. An empty password leaves it out (for listings, where it isn't known).
-func agentDSN(user, password, host, port string) string {
-	u := url.URL{Scheme: "postgresql", Host: host + ":" + port, Path: "/" + pgDatabase}
-	if password == "" {
-		u.User = url.User(user)
-	} else {
-		u.User = url.UserPassword(user, password)
-	}
-	return u.String()
-}
-
-// randomPassword returns 48 hex characters from crypto/rand.
-func randomPassword() (string, error) {
-	b := make([]byte, 24)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
-}
 
 // ensureLoginRole creates (or updates) a non-superuser login role on a branch with
 // its own password. It has the same shape as the gateway's per-user roles
