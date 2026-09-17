@@ -83,6 +83,7 @@ paths:
               required: [name]
               properties:
                 name: { type: string, example: qa }
+                from: { type: string, example: main, description: "The branch to copy (default main)." }
       responses:
         "201":
           description: Created.
@@ -93,8 +94,9 @@ paths:
                 properties:
                   name: { type: string }
                   status: { type: string, example: created }
-        "400": { description: "Invalid name (lowercase letters, digits and dashes)." }
+        "400": { description: "Invalid name or from (lowercase letters, digits and dashes)." }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: The branch named in from doesn't exist. }
         "409": { description: That branch already exists. }
 
   /api/branches/{name}:
@@ -169,6 +171,7 @@ paths:
         - { name: kind, in: query, schema: { type: string, enum: [human, agent] } }
         - { name: since, in: query, description: "Only entries at or after this time.", schema: { type: string } }
         - { name: until, in: query, description: "Only entries at or before this time.", schema: { type: string } }
+        - { name: with, in: query, description: "Extra columns, comma-separated: session. The default columns never change.", schema: { type: string, example: session } }
         - { name: limit, in: query, schema: { type: integer, default: 200, maximum: 2000 } }
         - { name: offset, in: query, schema: { type: integer } }
       responses:
@@ -666,6 +669,46 @@ paths:
             text/event-stream: { schema: { type: string } }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /api/replication:
+    get:
+      tags: [import]
+      summary: The running branches that have a continuous import, and where each stands.
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Replication" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/branches/{name}/replication:
+    get:
+      tags: [import]
+      summary: Where a branch's continuous import stands (replicating is false if it has none).
+      parameters: [{ $ref: "#/components/parameters/BranchName" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Replication" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: No such branch. }
+
+  /api/branches/{name}/replication/cutover:
+    post:
+      tags: [import]
+      summary: Stop a continuous import, keeping its data — the branch becomes standalone.
+      parameters: [{ $ref: "#/components/parameters/BranchName" }]
+      responses:
+        "200":
+          description: Cut over.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  branch: { type: string }
+                  status: { type: string, example: standalone }
+                  tables: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: No such branch. }
+        "409": { description: The branch has no continuous import to cut over. }
+
   /api/pipelines:
     get:
       tags: [pipelines]
@@ -956,6 +999,15 @@ components:
             once, at creation — listings omit the key — and revoked when the
             branch is deleted.
         status: { type: string, description: "ready, or suspended when the branch's container is stopped (the Gateway wakes it on connect)." }
+    Replication:
+      type: object
+      properties:
+        branch: { type: string }
+        replicating: { type: boolean }
+        tables: { type: integer, description: Tables the subscription covers. }
+        tables_ready: { type: integer, description: "Tables whose initial copy is done and that now stream changes. Cut over once it equals tables." }
+        last_message_at: { type: string, format: date-time, description: When the source last sent anything. }
+        received_lsn: { type: string }
     QueryResult:
       type: object
       properties:

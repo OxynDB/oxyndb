@@ -375,6 +375,22 @@ assert_eq "MCP blackbox_integrity matches ledger_integrity" \
 assert_eq "MCP verify_blackbox matches verify_ledger" \
   "$(mcp_call verify_blackbox '{"branch":"main"}')" "$(mcp_call verify_ledger '{"branch":"main"}')"
 
+echo "### 5b. Blackbox page: filters, session column (L5)"
+gw "$KEY" main "CREATE TABLE v2page_t(x int)" >/dev/null
+gw "$KEY" main "ALTER TABLE v2page_t ADD COLUMN y int; ALTER TABLE v2page_t DROP COLUMN y" >/dev/null
+lcols() { curl -sk -H "$AUTH" "$API/api/branches/main/ledger?$1" | jcols; }
+lcount() { curl -sk -H "$AUTH" "$API/api/branches/main/ledger?$1" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)["rows"]))'; }
+assert_eq "with=session adds the session column" "$(lcols 'limit=1&with=session')" \
+  "at,actor,actor_kind,tool,branch,command_tag,object_identity,statement,status,risk,session"
+assert_eq "without it the columns are unchanged" "$(lcols 'limit=1')" \
+  "at,actor,actor_kind,tool,branch,command_tag,object_identity,statement,status,risk"
+assert_eq "table filter" "$(lcount 'table=v2page_t&limit=50')" "3"
+assert_eq "table + risk filter" "$(lcount 'table=v2page_t&risk=drop-column&limit=50')" "1"
+TODAY="$(pg vec-main "SELECT to_char(now(),'YYYY-MM-DD')")"
+assert_eq "date range filter includes today" "$(lcount "table=v2page_t&since=$TODAY&until=$TODAY%2023:59:59&limit=50")" "3"
+assert_eq "date range filter excludes an earlier day" "$(lcount 'table=v2page_t&until=2000-01-01%2023:59:59&limit=50')" "0"
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2page_t" >/dev/null
+
 echo "### 6. Blackbox policy gate (warn / block — docs/policy-errors.md)"
 # gwv: psql through the gateway with SQLSTATEs shown ("NOTICE:  VDB02: …").
 gwv() { PGPASSWORD="$1" psql "$GATEWAY/$2" -X -v VERBOSITY=verbose -tAc "$3" 2>&1; }

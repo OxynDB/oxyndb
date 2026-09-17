@@ -222,18 +222,22 @@ func ImportContinuousTo(p *Progress, source, target string) (string, error) {
 
 // ImportCutover stops the continuous replication started by ImportContinuous,
 // leaving the copied data in place so the instance becomes standalone.
-func ImportCutover(target string) error {
+func ImportCutover(target string) error { return ImportCutoverTo(stdoutProgress(), target) }
+
+// ImportCutoverTo is ImportCutover with an explicit progress sink (the API passes
+// one that discards output).
+func ImportCutoverTo(p *Progress, target string) error {
 	// Guard the wrong-instance / never-replicated case before finalizing: an
 	// instance with no tables means continuous replication landed nothing.
 	if TableCount(target) == 0 {
 		return fmt.Errorf("instance %q has no tables — continuous replication never landed anything (the source was empty or the wrong database was named); nothing to finalize", target)
 	}
-	fmt.Printf("Finalizing %q — stopping replication, keeping data…\n", target)
+	p.Logf("Finalizing %q — stopping replication, keeping data…\n", target)
 	if err := run("docker", "exec", container(target), "psql", "-U", pgUser, "-d", pgDatabase,
 		"-c", "DROP SUBSCRIPTION IF EXISTS vdb_sub;"); err != nil {
 		return err
 	}
-	fmt.Printf("✓ %q is now a standalone instance (%d tables).\n", target, TableCount(target))
+	p.Logf("✓ %q is now a standalone instance (%d tables).\n", target, TableCount(target))
 	return nil
 }
 

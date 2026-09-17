@@ -543,3 +543,12 @@ th.expand-col, td.expand-col { width: 34px; padding-left: 8px; padding-right: 0;
 .override-toggle input:disabled + * { opacity: .6; }
 .override-help { margin-top: 10px; padding: 12px 14px; border-radius: var(--radius); font-size: 13.5px;
   border: 1px solid color-mix(in srgb, var(--red) 35%, var(--border)); background: color-mix(in srgb, var(--red) 6%, var(--panel)); }
+
+/* Blackbox page: expandable entries */
+.lg-row { cursor: pointer; }
+.lg-row:hover td { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.lg-caret { color: var(--muted); font-size: 11px; }
+.lg-detail td { background: color-mix(in srgb, var(--panel) 70%, transparent); }
+.lg-meta { display: flex; flex-wrap: wrap; gap: 18px; font-size: 12.5px; margin-bottom: 8px; }
+.lg-statement { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono); font-size: 12.5px;
+  color: #cbd5f5; max-height: 260px; overflow: auto; } /* the code colour pre code uses */

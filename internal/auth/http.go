@@ -24,8 +24,10 @@ func UserFrom(ctx context.Context) (User, bool) {
 func (s *Store) setCookie(w http.ResponseWriter, tok string) {
 	secure := strings.HasPrefix(s.cfg.WebOrigin, "https")
 	ss := http.SameSiteLaxMode
-	if secure {
-		ss = http.SameSiteNoneMode // cross-site cookie for a separate https UI origin
+	// Only a UI hosted on another origin needs the cookie sent cross-site; the
+	// console served by the control plane itself keeps the stricter Lax.
+	if secure && s.cfg.WebOrigin != s.cfg.PublicURL {
+		ss = http.SameSiteNoneMode
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name: cookieName, Value: tok, Path: "/", HttpOnly: true,

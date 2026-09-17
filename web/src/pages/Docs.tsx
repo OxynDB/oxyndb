@@ -31,7 +31,8 @@ export default function Docs() {
           <tr><td><code>vdb start</code> · <code>vdb stop</code></td><td>Start / stop the whole stack in the background</td></tr>
           <tr><td><code>vdb status</code></td><td>Servers, primary readiness, and branches</td></tr>
           <tr><td><code>vdb logs [gateway|api]</code></td><td>Print a background server's log</td></tr>
-          <tr><td><code>vdb branch create|list|delete|suspend|resume &lt;name&gt;</code></td><td>Manage copy-on-write branches</td></tr>
+          <tr><td><code>vdb branch create|list|delete|suspend|resume &lt;name&gt;</code></td><td>Manage copy-on-write branches (<code>create … --from &lt;branch&gt;</code> copies another branch)</td></tr>
+          <tr><td><code>vdb vm [status|shell]</code></td><td>macOS / Windows: the engine VM's state and size, or a shell inside it</td></tr>
           <tr><td><code>vdb backup create|list</code> · <code>vdb restore --to &lt;ts|latest&gt;</code></td><td>Time-travel / point-in-time recovery</td></tr>
           <tr><td><code>vdb ha enable|status|failover|disable|failback</code></td><td>High availability (streaming standby, failover, and failback to main)</td></tr>
           <tr><td><code>vdb gateway [--addr :6432] [--idle 2m]</code></td><td>The smart SQL gateway — routes by branch, auto-suspend/resume</td></tr>
@@ -55,11 +56,11 @@ export default function Docs() {
         <tbody>
           <tr><td><code>GET /api/status</code></td><td>Primary, counts, HA, storage, servers</td></tr>
           <tr><td><code>GET /api/branches</code></td><td>List branches (state, size, connections)</td></tr>
-          <tr><td><code>POST /api/branches</code></td><td>Create a branch — {'{ "name": "qa" }'}</td></tr>
+          <tr><td><code>POST /api/branches</code></td><td>Create a branch — {'{ "name": "qa", "from": "main" }'}</td></tr>
           <tr><td><code>DELETE /api/branches/{'{name}'}</code></td><td>Delete a branch</td></tr>
           <tr><td><code>POST /api/branches/{'{name}'}/suspend|resume</code></td><td>Suspend / resume</td></tr>
           <tr><td><code>POST /api/branches/{'{name}'}/query</code></td><td>Run SQL as the signed-in user — {'{ "sql": "…", "allow_destructive": false, "allow_rules": [] }'}</td></tr>
-          <tr><td><code>GET /api/branches/{'{name}'}/ledger</code></td><td>Blackbox entries (filters: <code>actor</code>, <code>table</code>, <code>risk</code>, <code>status</code>, <code>kind</code>, <code>since</code>, <code>until</code>)</td></tr>
+          <tr><td><code>GET /api/branches/{'{name}'}/ledger</code></td><td>Blackbox entries (filters: <code>actor</code>, <code>table</code>, <code>risk</code>, <code>status</code>, <code>kind</code>, <code>since</code>, <code>until</code>; <code>with=session</code> adds the session)</td></tr>
           <tr><td><code>GET …/ledger/verify</code> · <code>…/integrity</code> · <code>…/export</code> · <code>…/entries</code> · <code>…/sessions</code></td><td>Verify the hash chain, check against anchors, export JSONL, list entries and agent sessions</td></tr>
           <tr><td><code>POST …/ledger/checkpoint</code> · <code>POST …/ledger/{'{id}'}/branch</code></td><td>Anchor new entries; branch <code>main</code> from just before an entry</td></tr>
           <tr><td className="muted" colSpan={2}>Every <code>…/ledger…</code> path is also served as <code>…/blackbox…</code></td></tr>
@@ -69,6 +70,7 @@ export default function Docs() {
           <tr><td><code>POST /api/branches/{'{name}'}/impact</code></td><td>What a change would affect, before running it</td></tr>
           <tr><td><code>GET /api/ledger/diff</code> · <code>GET /api/blackbox/diff</code></td><td>Schema changes distinguishing two branches (<code>?a=&amp;b=</code>)</td></tr>
           <tr><td><code>POST /api/import</code> · <code>POST /api/import/file</code></td><td>Migrate from a connection string ({'{ "source", "target", "continuous" }'}) or an upload</td></tr>
+          <tr><td><code>GET /api/replication</code> · <code>GET /api/branches/{'{name}'}/replication</code> · <code>POST …/replication/cutover</code></td><td>Continuous imports: how far each has copied, and the cutover that makes the branch standalone</td></tr>
           <tr><td><code>GET|POST /api/pipelines</code> · <code>GET|PUT|DELETE …/{'{id}'}</code> · <code>…/runs</code> · <code>…/run</code></td><td>ETL pipelines and their run history</td></tr>
           <tr><td><code>GET|POST /api/keys</code> · <code>DELETE /api/keys/{'{id}'}</code></td><td>API keys</td></tr>
           <tr><td><code>POST /auth/login</code> · <code>/auth/register</code> · <code>/auth/logout</code> · <code>GET /auth/me</code></td><td>Browser sessions (public)</td></tr>
@@ -93,8 +95,8 @@ export default function Docs() {
         <thead><tr><th>Variable</th><th>Purpose</th></tr></thead>
         <tbody>
           <tr><td><code>VECTORADB_SIGNUP</code></td><td><code>open</code> (default) or <code>closed</code> — allow browser self-signup</td></tr>
-          <tr><td><code>VECTORADB_WEB_ORIGIN</code></td><td>Allowed browser origin for the API (default <code>http://localhost:5173</code>)</td></tr>
-          <tr><td><code>VECTORADB_PUBLIC_URL</code></td><td>Public base URL (used for OAuth redirects and links)</td></tr>
+          <tr><td><code>VECTORADB_PUBLIC_URL</code></td><td>Public base URL, for OAuth callbacks and links (default <code>https://localhost:8080</code>)</td></tr>
+          <tr><td><code>VECTORADB_WEB_ORIGIN</code></td><td>Where the web console is served, for CORS and the return from an OAuth login (default: the public URL — set it only for a separately hosted UI)</td></tr>
           <tr><td><code>VECTORADB_GITHUB_CLIENT_ID</code> · <code>_SECRET</code></td><td>Enable “Continue with GitHub” (optional)</td></tr>
           <tr><td><code>VECTORADB_GOOGLE_CLIENT_ID</code> · <code>_SECRET</code></td><td>Enable “Continue with Google” (optional)</td></tr>
           <tr><td><code>VECTORADB_ZPOOL_DEVICE</code> · <code>_SIZE</code></td><td>ZFS pool vdev &amp; size (auto-created on a loopback file if unset)</td></tr>

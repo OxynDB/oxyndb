@@ -66,7 +66,9 @@ export const revokeKey = (id: string) => req('DELETE', `${API}/api/keys/${encode
 // --- control plane ---
 export const getStatus = () => req('GET', `${API}/api/status`) as Promise<Status>
 export const getBranches = () => req('GET', `${API}/api/branches`) as Promise<Branch[]>
-export const createBranch = (name: string) => req('POST', `${API}/api/branches`, { name })
+// from: the branch to copy (default main).
+export const createBranch = (name: string, from?: string) =>
+  req('POST', `${API}/api/branches`, from ? { name, from } : { name })
 export const deleteBranch = (name: string) => req('DELETE', `${API}/api/branches/${name}`)
 export const suspendBranch = (name: string) => req('POST', `${API}/api/branches/${name}/suspend`)
 export const resumeBranch = (name: string) => req('POST', `${API}/api/branches/${name}/resume`)
@@ -80,6 +82,25 @@ export const runQuery = (name: string, sql: string, opts: { allowDestructive?: b
     ...(opts.allowDestructive ? { allow_destructive: true } : {}),
     ...(opts.allowRules?.length ? { allow_rules: opts.allowRules } : {}),
   }) as Promise<QueryResult>
+// Recomputes the Blackbox hash chain (GET …/ledger/verify).
+export type LedgerVerify = { legacy: number; chained: number; broken: number; firstBroken: string }
+export const verifyLedger = async (name: string): Promise<LedgerVerify> => {
+  const r = await req('GET', `${API}/api/branches/${name}/ledger/verify`) as QueryResult
+  if (r.error) throw new Error(r.error)
+  const row = r.rows?.[0] ?? []
+  const at = (c: string) => row[(r.columns ?? []).indexOf(c)]
+  return { legacy: Number(at('legacy') ?? 0), chained: Number(at('chained') ?? 0), broken: Number(at('broken') ?? 0), firstBroken: String(at('first_broken') ?? '') }
+}
+
+// Continuous imports (logical replication into a branch).
+export type Replication = {
+  branch: string; replicating: boolean; tables: number; tables_ready: number
+  last_message_at?: string; received_lsn?: string
+}
+export const listReplication = () => req('GET', `${API}/api/replication`) as Promise<Replication[]>
+export const cutoverReplication = (branch: string) =>
+  req('POST', `${API}/api/branches/${branch}/replication/cutover`) as Promise<{ branch: string; status: string; tables: number }>
+
 export const getLedger = (name: string, filters: Record<string, string> = {}) => {
   const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v)).toString()
   return req('GET', `${API}/api/branches/${name}/ledger${qs ? '?' + qs : ''}`) as Promise<QueryResult>

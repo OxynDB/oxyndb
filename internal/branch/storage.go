@@ -183,6 +183,10 @@ func (zfsStorage) protectPrimary() { reserveMain() }
 
 func (zfsStorage) clone(src, dst string) error {
 	snap := snapFor(src, dst)
+	// A snapshot left over from an earlier branch of this name (a crash, or a
+	// version that didn't clean it up) would make the snapshot below fail. The
+	// branch doesn't exist yet (Create checks), so nothing depends on it.
+	quiet("zfs", "destroy", snap)
 	if err := run("zfs", "snapshot", snap); err != nil {
 		return fmt.Errorf("snapshotting %s: %w", src, err)
 	}
@@ -194,13 +198,26 @@ func (zfsStorage) clone(src, dst string) error {
 }
 
 func (zfsStorage) destroy(branch string) error {
+	// A clone's origin is the snapshot it was made from, <parent>@for-<branch>.
+	// Read it before the clone goes: the parent isn't always main (branch create
+	// --from), and a leftover snapshot of that parent made re-creating a branch
+	// of the same name from it fail.
+	origin, _ := capture("zfs", "get", "-H", "-o", "value", "origin", dataset(branch))
 	if err := run("zfs", "destroy", "-R", dataset(branch)); err != nil {
 		return err
 	}
-	// Best effort: the origin snapshot is gone with -R in most layouts, and a
-	// leftover is harmless.
-	quiet("zfs", "destroy", snapFor("main", branch))
+	if o := strings.TrimSpace(origin); isOriginSnapshotFor(o, branch) {
+		quiet("zfs", "destroy", o)
+	}
+	quiet("zfs", "destroy", snapFor("main", branch)) // branches made before origins were read
 	return nil
+}
+
+// isOriginSnapshotFor reports whether a snapshot is the one made to clone this
+// branch (snapFor) — the only snapshot destroy may remove.
+func isOriginSnapshotFor(snapshot, branch string) bool {
+	return strings.HasPrefix(snapshot, datasetBase+"/") && strings.HasSuffix(snapshot, "@for-"+branch) &&
+		!strings.Contains(strings.TrimSuffix(snapshot, "@for-"+branch), "@")
 }
 
 func (zfsStorage) list() error {

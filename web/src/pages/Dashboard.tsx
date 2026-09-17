@@ -39,6 +39,7 @@ export default function Dashboard() {
   const [status, setStatus] = useState<Status | null>(null)
   const [branches, setBranches] = useState<Branch[]>([])
   const [name, setName] = useState('')
+  const [from, setFrom] = useState('main')
   const [err, setErr] = useState('')
   const [offline, setOffline] = useState(false)
 
@@ -62,7 +63,7 @@ export default function Dashboard() {
   }
   const create = () => {
     const n = name.trim()
-    if (n) { act(() => createBranch(n)); setName('') }
+    if (n) { act(() => createBranch(n, from === 'main' ? undefined : from)); setName('') }
   }
 
   if (offline) {
@@ -109,6 +110,12 @@ export default function Dashboard() {
           onKeyDown={e => { if (e.key === 'Enter') create() }}
           style={{ minWidth: 240 }}
         />
+        <span className="muted" style={{ fontSize: 13 }}>from</span>
+        <select value={from} onChange={e => setFrom(e.target.value)} title="The branch to copy">
+          {(branches.some(b => b.name === 'main') ? branches : [{ name: 'main' } as Branch, ...branches]).map(b => (
+            <option key={b.name} value={b.name}>{b.name}</option>
+          ))}
+        </select>
         <button className="primary" onClick={create} disabled={!name.trim()}>+ Create branch</button>
       </div>
       {err && <div className="err">{err}</div>}

@@ -433,8 +433,34 @@ func buildStartup(params map[string]string) []byte {
 	return out
 }
 
-// reaper periodically suspends branches idle (no proxy activity and no active
-// connections) for longer than idle.
+// Probes the reaper uses to decide whether an idle branch is really unused.
+// Package-level so tests can stand in for Docker and Postgres.
+var (
+	probeConnections = branch.ActiveConnections
+	probeReplication = branch.ReplicationStatus
+)
+
+// canSuspend reports whether a branch that has been idle past the window can be
+// stopped. It refuses a branch that still has client connections, and a branch
+// with a continuous import: replication has no client connections of its own
+// (the subscription's apply worker is a background worker), so an importing
+// branch looks idle, and suspending it silently stops the import until
+// something wakes the branch again. A probe that fails leaves the branch
+// running -- an unreachable branch is not proof that it is unused.
+func canSuspend(name string) bool {
+	active, err := probeConnections(name)
+	if err != nil || active > 0 {
+		return false
+	}
+	r, err := probeReplication(name)
+	if err != nil || r.Replicating {
+		return false
+	}
+	return true
+}
+
+// reaper periodically suspends branches idle (no proxy activity, no active
+// connections and no continuous import) for longer than idle.
 func reaper(idle time.Duration) {
 	interval := idle / 3
 	if interval < 5*time.Second {
@@ -462,9 +488,8 @@ func reaper(idle time.Duration) {
 			if idleFor < idle {
 				continue
 			}
-			active, err := branch.ActiveConnections(n)
-			if err != nil || active > 0 {
-				continue // in use (or unreachable) — leave it running
+			if !canSuspend(n) {
+				continue
 			}
 			log.Printf("auto-suspend: %s idle %s, 0 connections -> stopping", n, idleFor.Round(time.Second))
 			if err := branch.Suspend(n); err != nil {

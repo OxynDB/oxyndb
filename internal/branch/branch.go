@@ -12,6 +12,7 @@
 package branch
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -398,11 +399,19 @@ func LedgerText(name string, limit int) (string, error) {
 	return QueryText(name, q)
 }
 
+// ErrParentNotFound: a branch was asked to be created from one that doesn't exist.
+var ErrParentNotFound = errors.New("no branch to create from")
+
 // Create makes an instant copy-on-write branch of parent (default "main") and
 // starts a Postgres container serving it.
 func Create(name, parent string) error {
 	if parent == "" {
 		parent = "main"
+	}
+	// Cloning a branch that doesn't exist fails deep in the storage layer with a
+	// message about datasets or snapshots; say what's actually wrong.
+	if !activeStorage().exists(parent) {
+		return fmt.Errorf("%w: %q", ErrParentNotFound, parent)
 	}
 	if activeStorage().exists(name) {
 		return fmt.Errorf("branch %q already exists", name)

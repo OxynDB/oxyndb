@@ -8,6 +8,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -140,17 +141,30 @@ func registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/branches", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Name string `json:"name"`
+			From string `json:"from"` // the branch to copy; default main
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		if !nameRe.MatchString(body.Name) {
 			writeErr(w, 400, fmt.Errorf("invalid name (use lowercase letters, digits, dashes)"))
 			return
 		}
-		if err := branch.Create(body.Name, ""); err != nil {
-			writeErr(w, 409, err)
+		if body.From != "" && !nameRe.MatchString(body.From) {
+			writeErr(w, 400, fmt.Errorf("invalid from: %q is not a branch name", body.From))
 			return
 		}
-		writeJSON(w, 201, map[string]string{"name": body.Name, "status": "created"})
+		if err := branch.Create(body.Name, body.From); err != nil {
+			code := 409
+			if errors.Is(err, branch.ErrParentNotFound) {
+				code = 404
+			}
+			writeErr(w, code, err)
+			return
+		}
+		from := body.From
+		if from == "" {
+			from = "main"
+		}
+		writeJSON(w, 201, map[string]string{"name": body.Name, "from": from, "status": "created"})
 	})
 
 	mux.HandleFunc("DELETE /api/branches/{name}", func(w http.ResponseWriter, r *http.Request) {
@@ -249,6 +263,47 @@ func registerAPI(mux *http.ServeMux) {
 		send("done", map[string]any{"status": status, "target": target, "tables": branch.TableCount(target)})
 	})
 
+	// Continuous imports (logical replication into a branch): where each stands,
+	// and the cutover that turns one into a standalone branch.
+	mux.HandleFunc("GET /api/replication", func(w http.ResponseWriter, r *http.Request) {
+		list, err := branch.Replicating()
+		if err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, 200, list)
+	})
+	mux.HandleFunc("GET /api/branches/{name}/replication", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		if _, err := branch.EnsureRunning(name); err != nil {
+			writeErr(w, 404, err)
+			return
+		}
+		rep, err := branch.ReplicationStatus(name)
+		if err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, 200, rep)
+	})
+	mux.HandleFunc("POST /api/branches/{name}/replication/cutover", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		if _, err := branch.EnsureRunning(name); err != nil {
+			writeErr(w, 404, err)
+			return
+		}
+		tables, err := branch.CutoverReplication(name)
+		if err != nil {
+			code := 500
+			if errors.Is(err, branch.ErrNotReplicating) {
+				code = 409
+			}
+			writeErr(w, code, err)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"branch": name, "status": "standalone", "tables": tables})
+	})
+
 	// Migration via file upload: a .sql/.csv/.json file streamed from the browser
 	// into a new instance (kind inferred from the filename). Progress streams as SSE.
 	mux.HandleFunc("POST /api/import/file", func(w http.ResponseWriter, r *http.Request) {
@@ -334,10 +389,18 @@ func ledgerSQL(q url.Values) string {
 	if n, err := strconv.Atoi(q.Get("offset")); err == nil && n > 0 {
 		offset = n
 	}
+	// Extra columns are opt-in (with=session), so the default response keeps
+	// exactly the columns clients were built against.
+	extra := ""
+	for _, w := range strings.Split(q.Get("with"), ",") {
+		if strings.TrimSpace(w) == "session" {
+			extra = ", session"
+		}
+	}
 	return fmt.Sprintf(`SELECT to_char(at,'YYYY-MM-DD HH24:MI:SS') AS at, actor, actor_kind, tool,
-		branch, command_tag, object_identity, statement, status, risk
+		branch, command_tag, object_identity, statement, status, risk%s
 		FROM vdb.schema_ledger WHERE %s ORDER BY at DESC LIMIT %d OFFSET %d`,
-		strings.Join(where, " AND "), limit, offset)
+		extra, strings.Join(where, " AND "), limit, offset)
 }
 
 // queryAs says whose session a query runs in.
