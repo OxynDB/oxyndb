@@ -292,7 +292,7 @@ func handle(client net.Conn) {
 	// Attribution for the Blackbox: inject connection context that the
 	// branch's DDL event triggers read via current_setting('vectoradb.*'). For a
 	// per-user login this is a fallback/display value; session_user is authoritative.
-	params["options"] = ledgerOptions(params["options"], actor, target)
+	params["options"] = ledgerOptions(params["options"], actor, target, keyScope == "")
 	if err := backendAuth(backend, params, backendPass); err != nil {
 		log.Printf("backend auth %s: %v", addr, err)
 		sendError(client, "08006", fmt.Sprintf("branch %q authentication failed", target))

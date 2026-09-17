@@ -184,11 +184,14 @@ func newFakeGitHub(t *testing.T) *fakeGitHub {
 		}
 		if r.URL.Path == "/repos/vectoradb/vectoraDB/releases" {
 			f.lists.Add(1)
-			if r.Header.Get("If-None-Match") == `"v1"` {
+			// Like GitHub, the ETag changes when the list does; a fixed ETag
+			// would answer "not modified" right after a new release.
+			etag := fmt.Sprintf(`"v%d"`, len(f.releases))
+			if r.Header.Get("If-None-Match") == etag {
 				w.WriteHeader(http.StatusNotModified)
 				return
 			}
-			w.Header().Set("ETag", `"v1"`)
+			w.Header().Set("ETag", etag)
 			json.NewEncoder(w).Encode(f.releases)
 			return
 		}
@@ -389,10 +392,10 @@ func TestNoticeIsRememberedBetweenStarts(t *testing.T) {
 	if f.lists.Load() == calls {
 		t.Error("a different installed version reused the cache")
 	}
-	// "up to date" is remembered too.
+	// "Up to date" is not remembered: the next start asks again.
 	calls = f.lists.Load()
-	if got := BackgroundCheck(c, "0.99.0", linux, 5*time.Second)(); got != "" || f.lists.Load() != calls {
-		t.Error("an up-to-date answer wasn't remembered")
+	if got := BackgroundCheck(c, "0.99.0", linux, 5*time.Second)(); got != "" || f.lists.Load() == calls {
+		t.Error("an up-to-date answer was reused instead of asking GitHub again")
 	}
 	// Interval 0 checks on every start.
 	t.Setenv(EnvCheckInterval, "0")
@@ -404,6 +407,36 @@ func TestNoticeIsRememberedBetweenStarts(t *testing.T) {
 	if CheckInterval(func(string) string { return "" }) != 6*time.Hour ||
 		CheckInterval(func(string) string { return "30m" }) != 30*time.Minute {
 		t.Error("CheckInterval")
+	}
+}
+
+// A release published after a start found nothing must show on the very next
+// start. Remembering "up to date" hid v0.8.7 for hours while `vdb update
+// --check` reported it.
+func TestNewReleaseShowsOnNextStart(t *testing.T) {
+	f := newFakeGitHub(t)
+	linux := Target{GOOS: "linux", HostArch: "amd64"}
+	f.publish("v0.98.0", map[string]string{"vdb-linux-amd64": "current"})
+	cache := filepath.Join(t.TempDir(), "update-check.json")
+	c := f.client(cache)
+
+	if got := BackgroundCheck(c, "0.98.0", linux, 5*time.Second)(); got != "" {
+		t.Fatalf("up to date, but notice = %q", got)
+	}
+	f.publish("v0.99.0", map[string]string{"vdb-linux-amd64": "new"})
+	if got := BackgroundCheck(c, "0.98.0", linux, 5*time.Second)(); !strings.Contains(got, "v0.99.0 is available") {
+		t.Fatalf("release published after an up-to-date check: next start printed %q", got)
+	}
+
+	// A cache written by an earlier version holds "up to date" as an empty
+	// notice; it must not hide the release either.
+	c2 := f.client(filepath.Join(t.TempDir(), "update-check.json"))
+	old, _ := json.Marshal(noticeCache{CheckedAt: time.Now(), Repo: c2.Repo, Current: "0.98.0", Notice: ""})
+	if err := os.WriteFile(c2.NoticePath, old, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := BackgroundCheck(c2, "0.98.0", linux, 5*time.Second)(); !strings.Contains(got, "v0.99.0 is available") {
+		t.Fatalf("an old up-to-date cache hid the release: %q", got)
 	}
 }
 

@@ -230,3 +230,40 @@ CREATE TABLE api_keys (
 		t.Errorf("scope after migration = %q/%v, want agent-x/true", scope, ok)
 	}
 }
+
+// On a new install `vdb start` launches three servers that all create the store
+// at once. Some used to lose with SQLITE_BUSY and exit, leaving the control
+// plane and the Agent API down after the first start.
+func TestConcurrentFirstOpen(t *testing.T) {
+	const rounds, servers = 40, 4
+	fails := 0
+	for round := 0; round < rounds; round++ {
+		path := filepath.Join(t.TempDir(), "fresh.db")
+		var wg sync.WaitGroup
+		errs := make(chan error, servers)
+		for i := 0; i < servers; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				s, err := Open(Config{DBPath: path, WebOrigin: "http://x", SignupOpen: true})
+				if err != nil {
+					errs <- err
+					return
+				}
+				if err := s.Close(); err != nil {
+					errs <- err
+				}
+			}()
+		}
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			if fails++; fails <= 3 {
+				t.Errorf("round %d: opening a new store alongside others: %v", round, err)
+			}
+		}
+	}
+	if fails > 3 {
+		t.Errorf("%d of %d opens failed in total", fails, rounds*servers)
+	}
+}

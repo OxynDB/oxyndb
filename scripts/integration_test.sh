@@ -6,6 +6,10 @@
 # Exits non-zero if any assertion fails.
 set -uo pipefail
 
+# Refuses to run anywhere but the throwaway test VM (see scripts/lib/test_guard.sh).
+# A guard that can't be found must stop the suite, not let it carry on.
+. "$(cd "$(dirname "$0")" && pwd)/lib/test_guard.sh" || exit 2
+
 S="${VECTORADB_BIN:-/tmp/vdb}"
 # The Gateway authenticates with an API key, passed via PGPASSWORD where used.
 GATEWAY="postgresql://vectoradb@127.0.0.1:6432"

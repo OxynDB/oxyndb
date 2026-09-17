@@ -3,7 +3,7 @@
 # VectoraDB runs inside the Linux dev VM (ZFS + Docker); day-to-day operation is
 # via `lima /tmp/vdb <command>`. This Makefile just builds/checks the CLI.
 
-.PHONY: build vet fmt vm-build test integration web-dev web-build release release-linux wsl-zfs wsl-distro feature-doc integration-v2 integration-update
+.PHONY: build vet fmt vm-build test integration web-dev web-build release release-linux wsl-zfs wsl-distro feature-doc integration-v2 integration-update test-vm test-vm-stop test-vm-delete
 
 VERSION ?= 0.1.0
 LDFLAGS := -s -w -X github.com/vectoradb/vectoradb/internal/version.Version=$(VERSION)
@@ -48,14 +48,31 @@ vm-build: web-build   ## Build the Linux binary (UI embedded) inside the Lima VM
 test:             ## Run unit tests (host, no VM needed)
 	go test ./...
 
-integration:      ## Run the full end-to-end integration test in the Lima VM
-	lima bash -c 'cd "$(CURDIR)" && go build -o /tmp/vdb ./cmd/vdb' && lima bash "$(CURDIR)/scripts/integration_test.sh"
+# The integration suites are destructive (they wipe Blackbox history, restore
+# main to an earlier point, fail HA over), so they run in a throwaway VM of
+# their own — never the VM holding your install. See scripts/test_vm.sh.
+TEST_VM ?= vdb-test
+IN_TEST_VM = LIMA_INSTANCE=$(TEST_VM) lima
 
-integration-v2:   ## Run the Blackbox 2.0 checks (behaviour-unchanged + new) in the Lima VM
-	lima bash -c 'cd "$(CURDIR)" && go build -o /tmp/vdb ./cmd/vdb && go build -o /tmp/vdb-verify ./cmd/vdb-verify' && lima bash "$(CURDIR)/scripts/integration_ledger_v2.sh"
+test-vm:          ## Create or start the throwaway VM the integration suites run in
+	VDB_TEST_VM=$(TEST_VM) bash scripts/test_vm.sh
 
-integration-update: ## Run the `vdb update` / new-release notice checks against a fake GitHub in the Lima VM
-	lima bash "$(CURDIR)/scripts/integration_update.sh"
+test-vm-stop:     ## Stop the test VM (frees its memory; keeps it for next time)
+	limactl stop $(TEST_VM)
+
+test-vm-delete:   ## Delete the test VM and everything in it
+	limactl delete --force $(TEST_VM)
+
+integration: test-vm      ## Run the full end-to-end integration test in the test VM
+	$(IN_TEST_VM) bash -c 'cd "$(CURDIR)" && go build -o /tmp/vdb ./cmd/vdb' && $(IN_TEST_VM) bash "$(CURDIR)/scripts/integration_test.sh"
+
+integration-v2: test-vm   ## Run the Blackbox 2.0 checks (behaviour-unchanged + new) in the test VM
+	$(IN_TEST_VM) bash -c 'cd "$(CURDIR)" && go build -o /tmp/vdb ./cmd/vdb && go build -o /tmp/vdb-verify ./cmd/vdb-verify' && $(IN_TEST_VM) bash "$(CURDIR)/scripts/integration_ledger_v2.sh"
+
+# The update suite hands the stack back to /usr/local/bin/vdb when it finishes,
+# so the test VM gets the current build installed there first.
+integration-update: test-vm ## Run the `vdb update` / new-release notice checks against a fake GitHub in the test VM
+	$(IN_TEST_VM) bash -c 'cd "$(CURDIR)" && go build -o /tmp/vdb ./cmd/vdb && sudo install -m 0755 /tmp/vdb /usr/local/bin/vdb' && $(IN_TEST_VM) bash "$(CURDIR)/scripts/integration_update.sh"
 
 web-dev:          ## DEPRECATED: the engine serves the UI at https://localhost:8080 (`vdb start`). Hot-reload dev server only.
 	@echo "note: 'make web-dev' is deprecated — 'vdb start' serves the UI at https://localhost:8080."

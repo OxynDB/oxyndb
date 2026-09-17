@@ -25,11 +25,16 @@ gofmt -l cmd internal   # must print nothing
 ```
 
 CI runs the same checks on Linux (`.github/workflows/ci.yml`) and Windows. For
-changes to the engine lifecycle, run the end-to-end suite in the VM:
+changes to the engine lifecycle, run the end-to-end suites:
 
 ```bash
-make integration
+make integration integration-v2 integration-update
 ```
+
+They run in a throwaway Lima VM (`vdb-test`), created on first use — never in the
+VM that holds your own install. The suites are destructive by design (they wipe
+Blackbox history, restore `main` to an earlier point, fail HA over and create
+accounts), so each refuses to start anywhere `scripts/test_vm.sh` has not marked.
 
 Please:
 

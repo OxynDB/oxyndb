@@ -103,7 +103,7 @@
   <div class="meta">
     <b>What this is:</b> every VectoraDB feature and its sub-features — built or not, and how it was tested — so it's clear where we are and what's next.
     How each feature works is in <code>VDB_Feature_Implemented.pdf</code> (same ids).<br>
-    <b>Last updated:</b> 17 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>008b009</code> (v0.8.5 + agent reachability, PR #39) + console permissions (<code>fix/console-permissions</code>)<br>
+    <b>Last updated:</b> 17 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>34f05a1</code> (v0.8.7, console permissions PR #40) + update notice and test isolation (<code>fix/test-isolation</code>)<br>
     <b>Source:</b> <code>docs/VDB_Checklist.html</code> → <code>make feature-doc</code> → this PDF
   </div>
 
@@ -179,7 +179,7 @@
       <li class="ok">Seen verifying on a real Windows install</li></ul></td><td class="tb">Unit (<code>host_test.go</code>, <code>update_test.go</code>); Windows run 16 Sep</td></tr>
     <tr data-id="A8" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">A8</td><td><b>New-release notice on <code>vdb start</code></b><ul class="subs">
       <li class="ok">Background check, 1.5 s limit, printed last</li><li class="ok">Only a promoted, newer, complete release</li>
-      <li class="ok">One request, answer remembered 6 h (GitHub throttles asset downloads)</li><li class="ok">Off switch; never on dev builds; silent offline</li></ul></td><td class="tb">Unit; update §1, §1b, §2, §3, §8; real Mac check</td></tr>
+      <li class="ok">One request per start; a found release remembered 6 h, never &quot;up to date&quot;</li><li class="ok">Off switch; never on dev builds; silent offline</li></ul></td><td class="tb">Unit; update §1, §1b, §2, §3, §8; real Mac check</td></tr>
     <tr data-id="A9" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">A9</td><td><b><code>vdb update</code></b><ul class="subs">
       <li class="ok">Downloads and verifies everything before changing anything</li><li class="ok">Stops servers, installs engine, restarts old one on failure</li>
       <li class="ok"><code>up</code>, Blackbox upgrade, <code>start</code> on the new engine</li><li class="ok">Replaces host <code>vdb</code>, keeps previous binaries</li>
@@ -298,8 +298,8 @@
   <table>
     <tr><th></th><th>ID</th><th>Feature · sub-features</th><th>Tested by</th></tr>
     <tr data-id="G1" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">G1</td><td><b>Auth store (SQLite)</b><ul class="subs">
-      <li class="ok">Users, keys, sessions, OAuth ids, pipelines</li><li class="ok">Safe under concurrent use (WAL, busy timeout)</li>
-      <li class="todo">Roles / permissions, multi-tenant projects</li></ul></td><td class="tb">Unit (<code>TestVerifyKeyConcurrent</code>)</td></tr>
+      <li class="ok">Users, keys, sessions, OAuth ids, pipelines</li><li class="ok">Safe under concurrent use (WAL, busy timeout), including a new store created by three services at once</li>
+      <li class="todo">Roles / permissions, multi-tenant projects</li></ul></td><td class="tb">Unit (<code>TestVerifyKeyConcurrent</code>, <code>TestConcurrentFirstOpen</code>); VM §1</td></tr>
     <tr data-id="G2" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">G2</td><td><b>Email &amp; password users</b><ul class="subs">
       <li class="ok">Create account, log in</li><li class="todo">Password change / reset</li><li class="todo">List and delete users</li></ul></td><td class="tb">Unit; VM §1</td></tr>
     <tr data-id="G3" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">G3</td><td><b>API keys</b><ul class="subs">
@@ -360,7 +360,7 @@
       <li class="ok">Per-rule <code>vdb_admin</code> override</li><li class="ok">CLI, REST, MCP, web page; custom rules</li>
       <li class="part">Patterns match the whole query text</li><li class="todo">TRUNCATE</li></ul></td><td class="tb">Unit; v2 §6</td></tr>
     <tr data-id="H16" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">H16</td><td><b>Agent provenance &amp; execute_change</b><ul class="subs">
-      <li class="ok">Session, task, parent session on every agent change</li><li class="ok">MCP <code>execute_change</code> with policy preview</li>
+      <li class="ok">Session, task, parent session on every agent change (also through the Gateway DSN)</li><li class="ok">MCP <code>execute_change</code> with policy preview</li>
       <li class="ok"><code>vdb blackbox sessions</code>, REST</li><li class="part">Provenance is what the agent says (not verified)</li></ul></td><td class="tb">Unit; v2 §7</td></tr>
     <tr data-id="H17" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">H17</td><td><b>Impact analysis</b><ul class="subs">
       <li class="ok">Dependents (views, foreign keys, indexes, depth)</li><li class="ok">Other branches that have the object</li>
@@ -485,7 +485,7 @@
   <table>
     <tr><th></th><th>ID</th><th>Feature · sub-features</th><th>Tested by</th></tr>
     <tr data-id="M1" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">M1</td><td><b>Makefile targets</b><ul class="subs">
-      <li class="ok">build, vet, test, integration suites</li><li class="ok">release, web, WSL builds, feature-doc (both PDFs)</li></ul></td><td class="tb">CI</td></tr>
+      <li class="ok">build, vet, test, integration suites</li><li class="ok">Suites run only in a throwaway test VM (guarded)</li><li class="ok">release, web, WSL builds, feature-doc (both PDFs)</li></ul></td><td class="tb">CI</td></tr>
     <tr data-id="M2" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">M2</td><td><b>Linux CI</b><ul class="subs">
       <li class="ok">Build, vet, test, gofmt</li><li class="ok">Release script tests, checklist sync check</li>
       <li class="todo">VM integration suites in CI</li></ul></td><td class="tb">CI</td></tr>

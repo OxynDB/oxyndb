@@ -10,6 +10,10 @@
 # stack is put back on /usr/local/bin/vdb at the end.
 set -uo pipefail
 
+# Refuses to run anywhere but the throwaway test VM (see scripts/lib/test_guard.sh).
+# A guard that can't be found must stop the suite, not let it carry on.
+. "$(cd "$(dirname "$0")" && pwd)/lib/test_guard.sh" || exit 2
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ARCH="$(go env GOARCH)"
 T="$(mktemp -d /tmp/vdbupd.XXXXXX)"
@@ -114,9 +118,10 @@ assert_eq "notice is the last line" "$(tail -n 1 <<<"$OUT")" \
 assert_eq "notice printed once" "$(grep -c 'is available' <<<"$OUT")" "1"
 contains "banner still printed" "VectoraDB is up (background)" "$OUT"
 
-echo "### 1b. the answer is remembered between starts"
+echo "### 1b. a found release is remembered between starts"
 # GitHub throttles repeated downloads of a release asset, so the check asks only
-# for the releases list and remembers the answer (default 6h).
+# for the releases list, and remembers a found release (default 6h) — never
+# "up to date", which would hide a release published inside that window.
 stop_fake_github
 lacks "a forced check with GitHub unreachable prints nothing" "is available" "$(VECTORADB_UPDATE_CHECK_INTERVAL=0 "$V" start 2>&1)"
 assert_eq "the remembered notice still prints with GitHub unreachable" "$(tail -n 1 <<<"$("$V" start 2>&1)")" \

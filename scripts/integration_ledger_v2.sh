@@ -8,6 +8,10 @@
 # must keep passing too. Exits non-zero if any assertion fails.
 set -uo pipefail
 
+# Refuses to run anywhere but the throwaway test VM (see scripts/lib/test_guard.sh).
+# A guard that can't be found must stop the suite, not let it carry on.
+. "$(cd "$(dirname "$0")" && pwd)/lib/test_guard.sh" || exit 2
+
 S="${VECTORADB_BIN:-/tmp/vdb}"
 GATEWAY="postgresql://vectoradb@127.0.0.1:6432"
 API="https://localhost:8080"
