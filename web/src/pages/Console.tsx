@@ -18,11 +18,9 @@ WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
 ORDER BY table_schema, table_type DESC, table_name`
 
 // VectoraDB keeps its own bookkeeping (Blackbox, policies, agent sessions) in
-// the vdb schema of every branch. It is not the user's data, so it is listed
-// separately and folded away by default.
+// the vdb schema of every branch. It is not the user's data, so it is hidden
+// whenever the console opens and shown only on request.
 const isSystem = (o: DbObject) => o.schema === 'vdb' || o.schema.startsWith('vdb_')
-const SHOW_SYSTEM_KEY = 'vdb.console.showSystem'
-const readShowSystem = () => { try { return localStorage.getItem(SHOW_SYSTEM_KEY) === '1' } catch { return false } }
 
 // Statements that can add, remove or rename tables, so the schema list is
 // refreshed after they run.
@@ -38,7 +36,7 @@ export default function Console() {
   const [listing, setListing] = useState(false)
   const [listErr, setListErr] = useState('')
   const [reloadTick, setReloadTick] = useState(0)
-  const [showSystem, setShowSystem] = useState(readShowSystem)
+  const [showSystem, setShowSystem] = useState(false)
   const [filter, setFilter] = useState('')
   const [admins, setAdmins] = useState<BranchAdmins | null>(null)
   const [allowDestructive, setAllowDestructive] = useState(false)
@@ -90,10 +88,6 @@ export default function Console() {
 
   // Reload refreshes both the list and whatever table is open.
   const reload = () => { loadObjects(branch); setReloadTick(t => t + 1) }
-  const toggleSystem = () => setShowSystem(v => {
-    try { localStorage.setItem(SHOW_SYSTEM_KEY, v ? '0' : '1') } catch { /* per-viewer convenience only */ }
-    return !v
-  })
 
   // Load the active browse tab.
   useEffect(() => {
@@ -164,7 +158,6 @@ export default function Console() {
   const tables = objects.filter(o => !isSystem(o) && o.type === 'table' && match(o))
   const views = objects.filter(o => !isSystem(o) && o.type === 'view' && match(o))
   const system = objects.filter(o => isSystem(o) && match(o))
-  const systemOpen = showSystem || f !== ''
   const label = (o: DbObject) => (o.schema === 'public' ? o.name : o.schema + '.' + o.name)
   const canOverride = admins?.you_are_admin === true
   const blocked = !!queryRes?.error && BLOCKED.test(queryRes.error)
@@ -210,14 +203,17 @@ export default function Console() {
             {tables.map(item)}
             {views.length > 0 && <div className="obj-group">Views</div>}
             {views.map(item)}
-            {system.length > 0 && (
+            {showSystem && system.length > 0 && (
               <>
-                <button className="obj-group obj-toggle" onClick={toggleSystem} aria-expanded={systemOpen}
-                  title="Blackbox, policies and agent sessions — kept by VectoraDB, not your data">
-                  <span>{systemOpen ? '▾' : '▸'} VectoraDB system</span><span className="obj-count">{system.length}</span>
-                </button>
-                {systemOpen && system.map(item)}
+                <div className="obj-group">VectoraDB system</div>
+                {system.map(item)}
               </>
+            )}
+            {system.length > 0 && (
+              <button className="obj-show-system" onClick={() => setShowSystem(v => !v)} aria-expanded={showSystem}
+                title="Blackbox, policies and agent sessions — kept by VectoraDB, not your data">
+                {showSystem ? 'Hide system tables' : `Show system tables (${system.length})`}
+              </button>
             )}
           </div>
         </aside>
