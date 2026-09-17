@@ -91,15 +91,39 @@ func allowReplication(primary string) error {
 // startStandbyContainer runs the standby's Postgres on its storage. Before a
 // failover it streams from the primary named in its recovery settings; after a
 // promotion the same container is a primary.
+//
+// It carries the same object-storage environment and archive settings as the
+// primary (startContainer). archive_mode=on archives only when the server is
+// out of recovery, so nothing is pushed while it is a standby -- the primary is
+// already archiving those same segments -- and the moment it is promoted it
+// continues the WAL archive on its own timeline. Without this a promoted
+// standby ran with no archiving at all: `vdb backup create` had nothing to
+// anchor and a restore could not reach anything written after the failover.
+// archive_mode is a postmaster setting, so it has to be here rather than
+// reloaded at promotion time.
 func startStandbyContainer(store storage) error {
+	return run("docker", standbyRunArgs(store.standbyPath())...)
+}
+
+// standbyRunArgs builds the standby's `docker run` arguments. Separate from
+// startStandbyContainer so a test can assert the archive settings are there.
+func standbyRunArgs(dataPath string) []string {
 	// Publish a host port so the proxy can route to it if it is later promoted.
-	return run("docker", "run", "-d",
+	args := []string{"run", "-d",
 		"--name", container("standby"), "--network", network,
 		"-p", "0:5432",
-		"-e", "PGPASSWORD="+pgPass(), // used by the WAL receiver to authenticate
+		"-e", "PGPASSWORD=" + pgPass(), // used by the WAL receiver to authenticate
 		"-e", "PGDATA=/var/lib/postgresql/data/pgdata",
-		"-v", store.standbyPath()+":/var/lib/postgresql/data",
-		image, "postgres", "-c", "listen_addresses=*")
+		"-v", dataPath + ":/var/lib/postgresql/data",
+	}
+	args = append(args, walgEnv()...)
+	args = append(args, "-e", "WALG_COMPRESSION_METHOD=lz4")
+	return append(args, image, "postgres",
+		"-c", "wal_level=replica",
+		"-c", "archive_mode=on",
+		"-c", "archive_command=wal-g wal-push %p",
+		"-c", "archive_timeout=60",
+		"-c", "listen_addresses=*")
 }
 
 // HAEnable provisions a hot standby streaming from the current primary.
@@ -222,6 +246,13 @@ func ensurePromotedStandby() error {
 		return err
 	}
 	fmt.Println("note: 'main' is served by the promoted standby since `vdb ha failover` — run `vdb ha failback` to move it back to its own container")
+	// A standby created before archiving was set up here runs without it, and
+	// `docker start` cannot add it (archive_mode needs a postmaster start), so
+	// say so rather than leaving the gap silent.
+	if haQuery(container("standby"), "SELECT current_setting('archive_mode')") == "off" {
+		fmt.Println("note: this standby is not archiving WAL (it predates that change), so backups and point-in-time restore\n" +
+			"      do not cover writes made since the failover — `vdb ha failback` then `vdb ha enable` rebuilds it with archiving")
+	}
 	return nil
 }
 

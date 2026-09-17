@@ -103,7 +103,7 @@
   <div class="meta">
     <b>What this is:</b> every VectoraDB feature and its sub-features — built or not, and how it was tested — so it's clear where we are and what's next.
     How each feature works is in <code>VDB_Feature_Implemented.pdf</code> (same ids).<br>
-    <b>Last updated:</b> 17 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>fd1b620</code> (v0.8.7, Blackbox precision PR #42) + the Blackbox page and small gaps (<code>feat/blackbox-page-gaps</code>)<br>
+    <b>Last updated:</b> 18 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>8f6c7f6</code> (v0.8.7, Blackbox page &amp; small gaps PR #43) + the durability gaps (<code>feat/durability-gaps</code>)<br>
     <b>Source:</b> <code>docs/VDB_Checklist.html</code> → <code>make feature-doc</code> → this PDF
   </div>
 
@@ -243,14 +243,16 @@
       <li class="ok">wal-g ships main's WAL to MinIO, off the commit path</li><li class="ok">MinIO images pinned on quay.io</li>
       <li class="todo">Branches archive their own WAL</li></ul></td><td class="tb">VM §3</td></tr>
     <tr data-id="D2" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">D2</td><td><b>Base backups</b><ul class="subs">
-      <li class="ok">Create and list</li><li class="todo">Schedule and retention</li><li class="todo">Follow the primary after a failover</li></ul></td><td class="tb">VM §3</td></tr>
-    <tr data-id="D3" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">D3</td><td><b>Point-in-time restore</b><ul class="subs">
+      <li class="ok">Create and list</li><li class="ok">Follow the primary after a failover; listing works with main stopped</li>
+      <li class="ok">Read-only listing: <code>GET /api/backups</code> and a Dashboard panel</li><li class="todo">Schedule and retention</li></ul></td><td class="tb">VM §3, §3b, §6</td></tr>
+    <tr data-id="D3" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">D3</td><td><b>Point-in-time restore</b><ul class="subs">
       <li class="ok">Restore to a timestamp or latest on :5433</li><li class="ok">Per-install credentials</li>
-      <li class="todo">Use a base backup older than the latest</li></ul></td><td class="tb">VM §3; v2 §1a</td></tr>
+      <li class="ok">Starts from the newest base backup that precedes the target</li>
+      <li class="ok">A point no backup precedes is refused, naming the oldest</li></ul></td><td class="tb">Unit; VM §3, §3b, §6; v2 §1a</td></tr>
     <tr data-id="D4" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">D4</td><td><b>HA standby &amp; failover</b><ul class="subs">
       <li class="ok">Streaming hot standby</li><li class="ok">Manual failover, <code>main</code> rerouted</li>
       <li class="ok">Nothing deletes or stops the promoted standby</li><li class="ok"><code>vdb up</code> brings it back, not the old main</li>
-      <li class="ok"><code>vdb ha failback</code>, keeping every write</li><li class="part">No WAL archiving while main runs on the standby</li>
+      <li class="ok"><code>vdb ha failback</code>, keeping every write</li><li class="ok">The promoted standby archives WAL, so backups and PITR cover the failover</li>
       <li class="todo">Automatic failover, fencing, multi-host</li></ul></td><td class="tb">Unit; VM §6, §7</td></tr>
   </table>
 </section>

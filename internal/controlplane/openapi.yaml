@@ -35,6 +35,8 @@ tags:
     description: The Blackbox policy gate — rules checked on every schema change before it runs (docs/policy-errors.md).
   - name: pipelines
   - name: import
+  - name: backups
+    description: Base backups in object storage — what a point-in-time restore (`vdb restore --to`) can start from.
   - name: keys
   - name: agents
   - name: auth
@@ -669,6 +671,20 @@ paths:
             text/event-stream: { schema: { type: string } }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /api/backups:
+    get:
+      tags: [backups]
+      summary: Base backups in object storage, newest first.
+      description: >
+        What a point-in-time restore can start from. A restore can only reach a point that a
+        base backup precedes, so the oldest entry here is the earliest reachable point.
+        Performing a restore is `vdb restore --to <timestamp|latest>`, which is not in this API.
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Backup" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /api/replication:
     get:
       tags: [import]
@@ -999,6 +1015,14 @@ components:
             once, at creation — listings omit the key — and revoked when the
             branch is deleted.
         status: { type: string, description: "ready, or suspended when the branch's container is stopped (the Gateway wakes it on connect)." }
+    Backup:
+      type: object
+      properties:
+        name: { type: string, description: "The wal-g base backup name, e.g. base_00000001000000000000001A." }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time, description: A restore can start from this backup for any target at or after this time. }
+        size_bytes: { type: integer, description: Compressed size as stored. }
+        newest: { type: boolean, description: True for the most recent backup (the one a "latest" restore starts from). }
     Replication:
       type: object
       properties:

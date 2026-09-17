@@ -549,23 +549,42 @@ func Down() error {
 	return nil
 }
 
-// Backup takes a base backup of main and pushes it to object storage.
+// Backup takes a base backup of the current primary and pushes it to object
+// storage. It follows the primary pointer rather than always using vec-main:
+// after `vdb ha failover` main is stopped and the promoted standby holds every
+// write, so a backup of main would be stale — or would simply fail.
 func Backup() error {
+	primary := PrimaryContainer()
+	if primary != container("main") {
+		fmt.Printf("backing up %s, which is serving main since the failover\n", primary)
+	}
 	return run("docker", "exec",
 		"-e", "PGHOST=localhost", "-e", "PGUSER="+pgUser,
 		"-e", "PGPASSWORD="+pgPass(), "-e", "PGDATABASE="+pgDatabase,
-		container("main"), "wal-g", "backup-push", "/var/lib/postgresql/data/pgdata")
+		primary, "wal-g", "backup-push", "/var/lib/postgresql/data/pgdata")
 }
 
-// BackupList lists base backups in object storage.
+// BackupList lists base backups in object storage. It reads them from a
+// throwaway container (listBaseBackups does the same for its own JSON), so the
+// listing works whichever container is primary and even with the stack down --
+// the backups are in object storage, not in any one container.
 func BackupList() error {
-	return run("docker", "exec", container("main"), "wal-g", "backup-list", "--detail")
+	args := append([]string{"run", "--rm", "--network", network}, walgEnv()...)
+	args = append(args, image, "wal-g", "backup-list", "--detail")
+	return run("docker", args...)
 }
 
 // Restore performs point-in-time recovery into a disposable container on port
 // 5433. ts is a timestamp within the archived WAL window, or "latest".
 func Restore(ts string) error {
 	name := "restore"
+	backup, err := restoreBackupName(ts)
+	if err != nil {
+		return err
+	}
+	if backup != "LATEST" {
+		fmt.Printf("starting from base backup %s (the newest one that precedes %s)\n", backup, ts)
+	}
 	quiet("docker", "rm", "-f", container(name))
 	if err := run("docker", "run", "-d",
 		"--name", container(name), "--network", network,
@@ -579,9 +598,13 @@ func Restore(ts string) error {
 		"-e", "AWS_REGION=us-east-1",
 		"-e", "PGDATA=/var/lib/postgresql/data/pgdata",
 		"-e", "RECOVERY_TARGET_TIME="+ts,
+		"-e", "BACKUP_NAME="+backup,
 		"-p", "5433:5432",
-		"--entrypoint", "/usr/local/bin/restore-entrypoint.sh",
-		image,
+		// The script is carried in the binary and run with `bash -c`, as
+		// BranchBeforeEntry does, so installs whose image predates it still get
+		// the chosen base backup instead of the image's LATEST-only entrypoint.
+		"--entrypoint", "bash",
+		image, "-c", restorePITRScript,
 	); err != nil {
 		return err
 	}
@@ -613,8 +636,15 @@ func waitRecovered(name string) error {
 
 // Status prints primary readiness, stored backups, and branches.
 func Status() error {
-	fmt.Println("=== main readiness ===")
-	_ = run("docker", "exec", container("main"), "pg_isready", "-U", pgUser, "-d", pgDatabase)
+	primary := PrimaryContainer()
+	if primary == container("main") {
+		fmt.Println("=== main readiness ===")
+	} else {
+		// After a failover the promoted standby serves main, so probing vec-main
+		// would report the stopped container and look like an outage.
+		fmt.Printf("=== main readiness (served by %s since the failover) ===\n", primary)
+	}
+	_ = run("docker", "exec", primary, "pg_isready", "-U", pgUser, "-d", pgDatabase)
 	fmt.Println("\n=== base backups ===")
 	_ = BackupList()
 	fmt.Println("\n=== branches ===")
@@ -770,13 +800,19 @@ func primaryFile() string {
 }
 
 // PrimaryContainer is the container currently acting as the "main" primary.
-func PrimaryContainer() string {
+func PrimaryContainer() string { return container(primaryBranch()) }
+
+// primaryBranch is the branch name now serving as primary -- "main" unless a
+// failover pointed it elsewhere. Callers that need a branch name (to run SQL,
+// to name it in a message) use this; those that need a container use
+// PrimaryContainer.
+func primaryBranch() string {
 	if b, err := os.ReadFile(primaryFile()); err == nil {
 		if n := strings.TrimSpace(string(b)); n != "" {
-			return container(n)
+			return n
 		}
 	}
-	return container("main")
+	return "main"
 }
 
 // setPrimary records the branch name now serving as primary.

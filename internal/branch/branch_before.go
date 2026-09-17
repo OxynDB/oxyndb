@@ -72,9 +72,12 @@ type beforeEntry struct {
 // walgBackup is one entry of `wal-g backup-list --json --detail`.
 type walgBackup struct {
 	Name       string      `json:"backup_name"`
+	StartTime  time.Time   `json:"start_time"`
 	FinishTime time.Time   `json:"finish_time"`
 	FinishLSN  json.Number `json:"finish_lsn"`
 	SystemID   json.Number `json:"system_identifier"`
+	// Compressed size as stored, when wal-g reports it (--detail does).
+	CompressedSize json.Number `json:"compressed_size"`
 }
 
 var (

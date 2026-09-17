@@ -81,6 +81,38 @@ $S restore --to latest >/dev/null 2>&1; sleep 1
 assert_eq "PITR restores 3 rows" "$(pg vec-restore 'SELECT count(*) FROM pit')" "3"
 sudo docker rm -f vec-restore >/dev/null 2>&1
 
+echo "### 3b. PITR to a point before the newest base backup (D3)"
+# The restore used to fetch LATEST whatever the target was, so a point earlier
+# than the newest base backup could not be reached: recovery started after it.
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS tt; CREATE TABLE tt(id int);" >/dev/null
+$S backup create >/dev/null 2>&1                       # base backup A, before everything below
+pg vec-main "INSERT INTO tt SELECT generate_series(1,3);" >/dev/null
+pg vec-main "SELECT pg_switch_wal();" >/dev/null; sleep 3
+T1="$(pg vec-main "SELECT to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') || '+00'")"
+sleep 2
+pg vec-main "INSERT INTO tt SELECT generate_series(4,9);" >/dev/null
+$S backup create >/dev/null 2>&1                       # base backup B, finished AFTER T1
+pg vec-main "SELECT pg_switch_wal();" >/dev/null; sleep 4
+# The new read-only listing: newest first, with the newest flagged.
+BK="$(curl -sk -H "$AUTH" https://localhost:8080/api/backups)"
+assert_eq "the API lists base backups, newest first, flagging the newest" \
+  "$(echo "$BK" | python3 -c 'import sys,json; b=json.load(sys.stdin); print(len(b) >= 2, b[0].get("newest") is True, b[0]["finished_at"] > b[-1]["finished_at"])')" "True True True"
+NEWEST="$(echo "$BK" | python3 -c 'import sys,json; print(json.load(sys.stdin)[0]["name"])')"
+OUT="$($S restore --to "$T1" 2>&1)"; sleep 1
+assert_eq "restore says which base backup it starts from" "$(echo "$OUT" | grep -c 'starting from base backup')" "1"
+assert_eq "…and it is not the newest one" "$(echo "$OUT" | grep -c "$NEWEST")" "0"
+assert_eq "PITR reaches a point before the newest backup (3 rows, not 9)" "$(pg vec-restore 'SELECT count(*) FROM tt')" "3"
+sudo docker rm -f vec-restore >/dev/null 2>&1
+# A point no base backup precedes is refused, saying what the archive reaches.
+OLD="$($S restore --to '2020-01-01 00:00:00+00' 2>&1)"
+assert_eq "a point before every base backup is refused" "$(echo "$OLD" | grep -c 'no base backup had finished by')" "1"
+assert_eq "…the refusal names the oldest backup" "$(echo "$OLD" | grep -c 'the oldest is from')" "1"
+assert_eq "…and nothing was left behind" "$(sudo docker ps -aq --filter 'name=^vec-restore$' | wc -l | tr -d ' ')" "0"
+# latest still works exactly as before.
+$S restore --to latest >/dev/null 2>&1; sleep 1
+assert_eq "restore --to latest still reaches the end of the archive (9 rows)" "$(pg vec-restore 'SELECT count(*) FROM tt')" "9"
+sudo docker rm -f vec-restore >/dev/null 2>&1
+
 echo "### 4. suspend / resume"
 $S branch suspend itb >/dev/null 2>&1
 assert_eq "branch suspends" "$(sudo docker inspect -f '{{.State.Status}}' vec-itb 2>/dev/null)" "exited"
@@ -166,6 +198,26 @@ $S up >/dev/null 2>&1; sleep 2
 assert_eq "up recreates the promoted standby" "$(sudo docker inspect -f '{{.State.Status}}' vec-standby 2>/dev/null)" "running"
 assert_eq "up leaves the old main stopped" "$(sudo docker inspect -f '{{.State.Status}}' vec-main 2>/dev/null)" "exited"
 assert_eq "the post-failover write is on the standby" "$(pg vec-standby 'SELECT count(*) FROM pit WHERE id=99')" "1"
+# D2/D4: the promoted standby archives WAL and is what a backup is taken from.
+# Before this, a promoted standby ran with no archiving and `vdb backup create`
+# still targeted the stopped vec-main, so nothing written after a failover
+# could be backed up or restored.
+assert_eq "the promoted standby archives WAL" "$(pg vec-standby "SELECT current_setting('archive_mode')")" "on"
+pg vec-standby "INSERT INTO pit VALUES (101)" >/dev/null
+pg vec-standby "SELECT pg_switch_wal()" >/dev/null; sleep 6
+assert_eq "…and its archiver is shipping segments" "$(pg vec-standby 'SELECT archived_count > 0 AND last_failed_wal IS NULL FROM pg_stat_archiver')" "t"
+BEFORE="$(curl -sk -H "$AUTH" https://localhost:8080/api/backups | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')"
+BOUT="$($S backup create 2>&1)"
+assert_eq "backup create says it is backing up the standby" "$(echo "$BOUT" | grep -c 'serving main since the failover')" "1"
+assert_eq "…and one more base backup is stored" \
+  "$(curl -sk -H "$AUTH" https://localhost:8080/api/backups | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')" "$((BEFORE + 1))"
+assert_eq "backup list works with main stopped" "$($S backup list 2>/dev/null | grep -c 'base_')" "$((BEFORE + 1))"
+assert_eq "status names the container serving main" "$($S status 2>/dev/null | grep -c 'served by vec-standby since the failover')" "1"
+# End to end: a point-in-time restore now reaches a write made after the failover.
+pg vec-standby "SELECT pg_switch_wal()" >/dev/null; sleep 5
+$S restore --to latest >/dev/null 2>&1; sleep 1
+assert_eq "PITR reaches a write made after the failover" "$(pg vec-restore 'SELECT count(*) FROM pit WHERE id=101')" "1"
+sudo docker rm -f vec-restore >/dev/null 2>&1
 $S ha failback >/tmp/failback.log 2>&1
 assert_eq "ha failback exits 0" "$?" "0"
 assert_eq "main is primary again (not in recovery)" "$(pg vec-main 'SELECT pg_is_in_recovery()')" "f"

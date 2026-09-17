@@ -102,3 +102,25 @@ Latest checkpoint's REDO location:    0/5000028
 		t.Fatal("accepted output without the checkpoint location")
 	}
 }
+
+// A promoted standby must archive WAL, or nothing written after a failover can
+// be backed up or restored. archive_mode is a postmaster setting, so it has to
+// be on the standby's own command line from the start; on (not always) means
+// nothing is archived while it is still in recovery and the primary is.
+func TestStandbyRunArgsArchive(t *testing.T) {
+	args := strings.Join(standbyRunArgs("/data/standby"), " ")
+	for _, want := range []string{
+		"archive_mode=on",
+		"archive_command=wal-g wal-push %p",
+		"WALG_S3_PREFIX=s3://vectoradb-wal",
+		"AWS_ENDPOINT=http://minio:9000",
+		"/data/standby:/var/lib/postgresql/data",
+	} {
+		if !strings.Contains(args, want) {
+			t.Errorf("standby args are missing %q\ngot: %s", want, args)
+		}
+	}
+	if strings.Contains(args, "archive_mode=always") {
+		t.Error("archive_mode=always would double-archive while the primary is still archiving")
+	}
+}
