@@ -15,8 +15,8 @@ import (
 // EnvNoCheck turns off the check `vdb start` makes for a newer release.
 const EnvNoCheck = "VECTORADB_NO_UPDATE_CHECK"
 
-// EnvCheckInterval is how long the answer of a start-time check is remembered
-// (default 6h; 0 means check on every start).
+// EnvCheckInterval is how long a newer release found by a start-time check is
+// remembered (default 6h; 0 means check on every start).
 const EnvCheckInterval = "VECTORADB_UPDATE_CHECK_INTERVAL"
 
 // CheckInterval reads EnvCheckInterval.
@@ -31,17 +31,23 @@ func CheckInterval(getenv func(string) string) time.Duration {
 	return 6 * time.Hour
 }
 
-// noticeCache is the answer of the last start-time check, so repeated starts
-// cost nothing: GitHub is asked at most once per CheckInterval.
+// noticeCache is a newer release found by a start-time check, so the notice
+// keeps printing on later starts without asking GitHub again.
 type noticeCache struct {
 	CheckedAt time.Time `json:"checked_at"`
 	Repo      string    `json:"repo"`
 	Current   string    `json:"current"`
-	Notice    string    `json:"notice"` // "" = was up to date
+	Notice    string    `json:"notice"`
 }
 
-// cachedNotice returns the remembered answer for this repo and installed
-// version, if it was made within the interval.
+// cachedNotice returns the remembered notice for this repo and installed
+// version, if it was found within the interval.
+//
+// Only a found release counts. "Up to date" is never an answer to reuse: a
+// release published a minute later would stay invisible for the whole interval
+// (with the 6h default, a release went unannounced for hours while
+// `vdb update --check` saw it). Files written before this rule may still hold
+// an empty notice; they are ignored rather than trusted.
 func (c *Client) cachedNotice(current string, within time.Duration) (string, bool) {
 	if c.NoticePath == "" || within <= 0 {
 		return "", false
@@ -51,7 +57,7 @@ func (c *Client) cachedNotice(current string, within time.Duration) (string, boo
 		return "", false
 	}
 	var n noticeCache
-	if json.Unmarshal(b, &n) != nil || n.Repo != c.Repo || n.Current != current {
+	if json.Unmarshal(b, &n) != nil || n.Repo != c.Repo || n.Current != current || n.Notice == "" {
 		return "", false
 	}
 	age := time.Since(n.CheckedAt)
@@ -113,10 +119,12 @@ func Notice(current string, o *Offer) string {
 // rate limited) or it didn't finish within the timeout. It never blocks longer
 // than the timeout, counted from when the check started.
 //
-// The answer of a successful check is remembered for CheckInterval, so starting
-// the stack repeatedly asks GitHub at most once every few hours; a failed check
-// is not remembered, so the next start tries again. The check itself is a single
-// request for the releases list (see Available).
+// A newer release, once found, is remembered for CheckInterval, so the notice
+// keeps printing without asking GitHub again. "Up to date" and failed checks
+// are not remembered, so a new release shows on the very next start. That costs
+// one request per start for the releases list (see Available) — conditional on
+// the previous ETag, so an unchanged list is a 304 that GitHub does not count
+// against the rate limit.
 func BackgroundCheck(c *Client, current string, t Target, timeout time.Duration) func() string {
 	cur, err := ParseVersion(current)
 	if err != nil {
@@ -136,8 +144,8 @@ func BackgroundCheck(c *Client, current string, t Target, timeout time.Duration)
 		s := ""
 		if o != nil {
 			s = Notice(current, o)
+			c.rememberNotice(current, s)
 		}
-		c.rememberNotice(current, s)
 		ch <- s
 	}()
 	return func() string {

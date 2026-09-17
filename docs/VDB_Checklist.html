@@ -103,7 +103,7 @@
   <div class="meta">
     <b>What this is:</b> every VectoraDB feature and its sub-features — built or not, and how it was tested — so it's clear where we are and what's next.
     How each feature works is in <code>VDB_Feature_Implemented.pdf</code> (same ids).<br>
-    <b>Last updated:</b> 17 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>008b009</code> (v0.8.5 + agent reachability, PR #39) + console permissions (<code>fix/console-permissions</code>)<br>
+    <b>Last updated:</b> 17 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>34f05a1</code> (v0.8.7, console permissions PR #40) + update notice (<code>fix/update-notice-cache</code>)<br>
     <b>Source:</b> <code>docs/VDB_Checklist.html</code> → <code>make feature-doc</code> → this PDF
   </div>
 
@@ -179,7 +179,7 @@
       <li class="ok">Seen verifying on a real Windows install</li></ul></td><td class="tb">Unit (<code>host_test.go</code>, <code>update_test.go</code>); Windows run 16 Sep</td></tr>
     <tr data-id="A8" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">A8</td><td><b>New-release notice on <code>vdb start</code></b><ul class="subs">
       <li class="ok">Background check, 1.5 s limit, printed last</li><li class="ok">Only a promoted, newer, complete release</li>
-      <li class="ok">One request, answer remembered 6 h (GitHub throttles asset downloads)</li><li class="ok">Off switch; never on dev builds; silent offline</li></ul></td><td class="tb">Unit; update §1, §1b, §2, §3, §8; real Mac check</td></tr>
+      <li class="ok">One request per start; a found release remembered 6 h, never &quot;up to date&quot;</li><li class="ok">Off switch; never on dev builds; silent offline</li></ul></td><td class="tb">Unit; update §1, §1b, §2, §3, §8; real Mac check</td></tr>
     <tr data-id="A9" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">A9</td><td><b><code>vdb update</code></b><ul class="subs">
       <li class="ok">Downloads and verifies everything before changing anything</li><li class="ok">Stops servers, installs engine, restarts old one on failure</li>
       <li class="ok"><code>up</code>, Blackbox upgrade, <code>start</code> on the new engine</li><li class="ok">Replaces host <code>vdb</code>, keeps previous binaries</li>
