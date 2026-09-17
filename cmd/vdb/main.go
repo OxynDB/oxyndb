@@ -44,6 +44,7 @@ Usage:
 
 Setup:
   setup                One-time: create/start the local engine VM (macOS: Lima, Windows: WSL2) and bring the stack up
+  vm [status|shell]    The engine VM (macOS: Lima, Windows: WSL2): its state and size, or a shell inside it
   update [--check]     Install the newest release: new engine, restarted servers, Blackbox upgrades — data untouched
                        (--yes skips the confirmation, --version vX.Y.Z picks a release)
 
@@ -62,7 +63,7 @@ Durability / time-travel:
   restore --to <ts>    PITR into a disposable container on port 5433 (ts or 'latest')
 
 Branching:
-  branch create <name>  Instant copy-on-write branch of main (ZFS clone)
+  branch create <name> [--from <branch>]  Instant copy-on-write branch of main, or of another branch
   branch list           List branches and their containers
   branch delete <name>  Stop and destroy a branch
   branch reset <name>   Re-clone from parent, discarding everything done on it
@@ -156,6 +157,8 @@ func main() {
 		fmt.Printf("vdb %s\n", version.Version)
 	case "setup":
 		must(host.Setup())
+	case "vm":
+		must(host.VM(os.Args[2:]))
 	case "start":
 		// Linux host: look for a newer release while the stack starts. (macOS and
 		// Windows check on the host before forwarding; the guest never checks.)
@@ -464,11 +467,12 @@ func branchCmd(args []string) {
 	}
 	switch args[0] {
 	case "create":
-		if len(args) < 2 {
-			fmt.Println("usage: vdb branch create <name>")
+		name := firstPositional(args[1:], "--from")
+		if name == "" {
+			fmt.Println("usage: vdb branch create <name> [--from <branch>]")
 			os.Exit(2)
 		}
-		must(branch.Create(args[1], ""))
+		must(branch.Create(name, optValue(args[1:], "--from")))
 	case "list":
 		must(branch.List())
 	case "delete":

@@ -34,12 +34,42 @@ assert_eq "control plane reports main ready" "$(curl -sk -H "$AUTH" https://loca
 assert_eq "gateway rejects a bad key" "$(PGPASSWORD=nope psql "$GATEWAY/main" -tAc 'select 1' 2>&1 | grep -c 'invalid API key' | awk '{print ($1 >= 1)}')" "1"
 assert_eq "gateway accepts the API key" "$(PGPASSWORD="$KEY" psql "$GATEWAY/main" -tAc 'select 1' 2>/dev/null)" "1"
 
+# B1: `vdb vm` is implemented; on Linux there is no VM to show or enter.
+assert_eq "vdb vm on Linux says there is no VM" "$($S vm 2>&1 | grep -c 'there is no VM')|$($S vm >/dev/null 2>&1; echo $?)" "1|0"
+assert_eq "vdb vm shell on Linux fails with a reason" "$($S vm shell 2>&1 | grep -c 'no VM to open a shell in')|$($S vm shell >/dev/null 2>&1; echo $?)" "1|1"
+assert_eq "vdb vm rejects an unknown subcommand" "$($S vm reboot >/dev/null 2>&1; echo $?)" "1"
+
+# G5: the console, API and OAuth callbacks are served over https on :8080, so the
+# defaults point there (they pointed at http:// and a retired dev server on :5173).
+COOKIE="$(curl -sk -i -X POST -H 'Content-Type: application/json' -d '{"email":"test@vectoradb.dev","password":"password123"}' https://localhost:8080/auth/login | grep -i '^set-cookie:')"
+assert_eq "login sets a Secure, SameSite=Lax session cookie" \
+  "$(echo "$COOKIE" | grep -ci 'secure')|$(echo "$COOKIE" | grep -ci 'samesite=lax')" "1|1"
+$S stop >/dev/null 2>&1; sleep 1
+VECTORADB_GITHUB_CLIENT_ID=it-client VECTORADB_GITHUB_CLIENT_SECRET=it-secret $S start >/dev/null 2>&1; sleep 5
+assert_eq "OAuth calls back to https://localhost:8080 by default" \
+  "$(curl -sk -o /dev/null -w '%{redirect_url}' https://localhost:8080/auth/oauth/github | grep -c 'redirect_uri=https%3A%2F%2Flocalhost%3A8080%2Fauth%2Foauth%2Fgithub%2Fcallback')" "1"
+$S stop >/dev/null 2>&1; sleep 1
+$S start >/dev/null 2>&1; sleep 5
+
 echo "### 2. branch isolation"
 $S branch delete itb >/dev/null 2>&1
 $S branch create itb >/dev/null 2>&1
 pg vec-itb "CREATE TABLE iso(x int); INSERT INTO iso VALUES (1);" >/dev/null
 assert_eq "branch sees its own write" "$(pg vec-itb 'SELECT count(*) FROM iso')" "1"
 assert_eq "main isolated from branch" "$(pg vec-main "SELECT to_regclass('public.iso') IS NULL")" "t"
+
+# B1: branch create --from copies another branch, not main.
+$S branch delete itfrom >/dev/null 2>&1
+$S branch create itfrom --from itb >/dev/null 2>&1
+assert_eq "branch create --from copies that branch's data" "$(pg vec-itfrom 'SELECT count(*) FROM iso')" "1"
+assert_eq "…and main still doesn't have it" "$(pg vec-main "SELECT to_regclass('public.iso') IS NULL")" "t"
+assert_eq "branch create --from a missing branch says so" "$($S branch create itnope --from no-such-branch 2>&1 | grep -c 'no branch to create from')" "1"
+assert_eq "REST: from a missing branch is 404" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' -H "$AUTH" -H 'Content-Type: application/json' -X POST -d '{"name":"itnope","from":"no-such-branch"}' https://localhost:8080/api/branches)" "404"
+$S branch delete itfrom >/dev/null 2>&1
+assert_eq "REST: create from a branch (201, names the parent)" \
+  "$(curl -sk -H "$AUTH" -H 'Content-Type: application/json' -X POST -d '{"name":"itfrom","from":"itb"}' https://localhost:8080/api/branches | jget from)|$(pg vec-itfrom 'SELECT count(*) FROM iso')" "itb|1"
+$S branch delete itfrom >/dev/null 2>&1
 
 echo "### 3. time-travel / PITR"
 # The guardrail blocks DROP TABLE without the override, which silently kept the
@@ -69,6 +99,52 @@ curl -sk -H "$AUTH" -X DELETE https://localhost:8088/agents/itest/branch >/dev/n
 # The DSN carries a key scoped to that branch, and deleting the branch revokes it.
 assert_eq "the agent's key dies with its branch" \
   "$(psql "$DSN" -tAc 'SELECT 1' 2>&1 | grep -c 'invalid API key')" "1"
+
+echo "### 5b. continuous import: status and cutover from the API (I8)"
+# A real PostgreSQL source with logical replication, on the stack's network,
+# running the same image main does.
+IMG="$(sudo docker inspect -f '{{.Config.Image}}' vec-main)"
+sudo docker rm -f itsrc >/dev/null 2>&1; $S branch delete itrep >/dev/null 2>&1
+sudo docker run -d --name itsrc --network vectoradb -e POSTGRES_PASSWORD=srcpw "$IMG" postgres -c wal_level=logical >/dev/null
+for i in $(seq 1 60); do sudo docker exec itsrc pg_isready -U postgres -q && break; sleep 1; done
+sudo docker exec itsrc psql -U postgres -q -c "CREATE TABLE items(id int PRIMARY KEY, v text); INSERT INTO items VALUES (1,'a'),(2,'b'),(3,'c');" >/dev/null
+SSE="$(curl -sk -N --max-time 180 -H "$AUTH" -H 'Content-Type: application/json' -X POST \
+  -d '{"source":"postgresql://postgres:srcpw@itsrc:5432/postgres","target":"itrep","continuous":true}' https://localhost:8080/api/import)"
+assert_eq "continuous import starts replicating into its branch" \
+  "$(echo "$SSE" | grep -A1 '^event: done' | grep -c '"status":"replicating"')" "1"
+repl() { curl -sk -H "$AUTH" https://localhost:8080/api/branches/itrep/replication; }
+for i in $(seq 1 60); do [ "$(repl | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["tables"] > 0 and d["tables_ready"] == d["tables"])')" = True ] && break; sleep 1; done
+assert_eq "status: the initial copy finishes (1 of 1 tables)" \
+  "$(repl | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["replicating"], d["tables_ready"], d["tables"])')" "True 1 1"
+assert_eq "the initial copy has the rows" "$(pg vec-itrep 'SELECT count(*) FROM items')" "3"
+sudo docker exec itsrc psql -U postgres -q -c "INSERT INTO items VALUES (4,'d')" >/dev/null
+for i in $(seq 1 30); do [ "$(pg vec-itrep 'SELECT count(*) FROM items')" = 4 ] && break; sleep 1; done
+assert_eq "a change on the source streams across" "$(pg vec-itrep 'SELECT count(*) FROM items')" "4"
+# A replicating branch has no client connections of its own -- the apply worker
+# is a background worker -- so the reaper used to suspend it two minutes in and
+# the import silently stopped. A short-idle gateway, with a plain branch as the
+# control, proves it now survives.
+$S branch create itidle >/dev/null 2>&1
+nohup "$S" gateway --addr :6502 --idle 8s >/tmp/itrepgateway.log 2>&1 &
+RPI=$!
+sleep 28
+kill "$RPI" 2>/dev/null
+assert_eq "a replicating branch survives the reaper" "$(sudo docker inspect -f '{{.State.Status}}' vec-itrep 2>/dev/null)" "running"
+assert_eq "…while an idle plain branch is still suspended" "$(sudo docker inspect -f '{{.State.Status}}' vec-itidle 2>/dev/null)" "exited"
+assert_eq "…and it is still streaming afterwards" "$(repl | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["replicating"], d["tables_ready"], d["tables"])')" "True 1 1"
+$S branch delete itidle >/dev/null 2>&1
+assert_eq "the list of continuous imports includes it" \
+  "$(curl -sk -H "$AUTH" https://localhost:8080/api/replication | python3 -c 'import sys,json; print([r["branch"] for r in json.load(sys.stdin)].count("itrep"))')" "1"
+assert_eq "cutover makes the branch standalone" \
+  "$(curl -sk -H "$AUTH" -X POST https://localhost:8080/api/branches/itrep/replication/cutover | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["status"], d["tables"])')" "standalone 1"
+assert_eq "…and it no longer replicates" "$(repl | python3 -c 'import sys,json; print(json.load(sys.stdin)["replicating"])')" "False"
+sudo docker exec itsrc psql -U postgres -q -c "INSERT INTO items VALUES (5,'e')" >/dev/null; sleep 5
+assert_eq "…so later source changes don't arrive, and the data stays" "$(pg vec-itrep 'SELECT count(*) FROM items')" "4"
+assert_eq "cutting over again is refused (409)" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' -H "$AUTH" -X POST https://localhost:8080/api/branches/itrep/replication/cutover)" "409"
+assert_eq "cutover of a branch that never replicated is refused (409)" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' -H "$AUTH" -X POST https://localhost:8080/api/branches/itb/replication/cutover)" "409"
+$S branch delete itrep >/dev/null 2>&1; sudo docker rm -f itsrc >/dev/null 2>&1
 
 echo "### 6. HA: replication + failover + failback"
 $S ha enable >/dev/null 2>&1; sleep 2

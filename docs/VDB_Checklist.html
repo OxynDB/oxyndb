@@ -103,7 +103,7 @@
   <div class="meta">
     <b>What this is:</b> every VectoraDB feature and its sub-features — built or not, and how it was tested — so it's clear where we are and what's next.
     How each feature works is in <code>VDB_Feature_Implemented.pdf</code> (same ids).<br>
-    <b>Last updated:</b> 17 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>56432a4</code> (v0.8.7, test isolation PR #41) + Blackbox precision (<code>fix/blackbox-precision</code>)<br>
+    <b>Last updated:</b> 17 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>fd1b620</code> (v0.8.7, Blackbox precision PR #42) + the Blackbox page and small gaps (<code>feat/blackbox-page-gaps</code>)<br>
     <b>Source:</b> <code>docs/VDB_Checklist.html</code> → <code>make feature-doc</code> → this PDF
   </div>
 
@@ -138,8 +138,8 @@
     <li>Run <code>vdb update</code> against a real release on macOS and Windows (A9) — cut v0.9.0, install it, then update to v0.9.1.</li>
     <li>HA beyond the demo: archive WAL while main runs on the promoted standby, then automatic failover and fencing (D4). <i>(Safety fixes C3, D4 hazards, H7, I5, I6 done.)</i></li>
     <li>Verify downloads everywhere: installers and <code>vdb setup</code>'s engine download still skip <code>SHA256SUMS</code> (A1, A2, A7).</li>
-    <li>Check the web pages that were built but never used signed in: Integrity, Policies, sidebar (L8–L10); add Blackbox filters (L5).</li>
-    <li>Add automated tests where there are none: imports (I1–I3, I5, I7, I8), SDKs (K3, K4), web UI (L*).</li>
+    <li><s>Check the web pages that were built but never used signed in: Integrity, Policies, sidebar (L8–L10); add Blackbox filters (L5).</s> Done — both, in the browser.</li>
+    <li>Add automated tests where there are none: imports (I1–I3, I7 — I5 and I8 now covered), SDKs (K3, K4), web UI (L*).</li>
     <li>Run the VM integration suites in CI (M2).</li>
   </ol>
   <div class="foot">VDB_Checklist · overview</div>
@@ -194,10 +194,10 @@
   <h2><span class="al">B</span>CLI &amp; services<span class="cnt"></span></h2>
   <table>
     <tr><th></th><th>ID</th><th>Feature · sub-features</th><th>Tested by</th></tr>
-    <tr data-id="B1" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">B1</td><td><b>The <code>vdb</code> command set</b><ul class="subs">
+    <tr data-id="B1" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">B1</td><td><b>The <code>vdb</code> command set</b><ul class="subs">
       <li class="ok">Stack: setup, start, stop, up, down, status, logs, psql, update</li><li class="ok">Branching, backup / restore, HA</li>
       <li class="ok">Blackbox, policy, impact</li><li class="ok">Import, pipelines</li>
-      <li class="ok">Users, API keys, admin</li><li class="part"><code>vdb vm</code> listed but not implemented</li>
+      <li class="ok">Users, API keys, admin</li><li class="ok"><code>vdb vm status</code> / <code>vdb vm shell</code> (Lima, WSL; Linux says there is no VM)</li>
       <li class="todo"><code>branch create --from</code></li></ul></td><td class="tb">Unit (<code>main_test.go</code>, <code>update_test.go</code>); VM suites</td></tr>
     <tr data-id="B2" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">B2</td><td><b>Background services (daemon)</b><ul class="subs">
       <li class="ok">Control plane :8080, gateway :6432, agent API :8088</li><li class="ok">Detached, pidfiles and logs in <code>~/.vectoradb</code></li>
@@ -213,10 +213,10 @@
     <tr data-id="C1" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">C1</td><td><b>Storage drivers (ZFS / btrfs)</b><ul class="subs">
       <li class="ok">ZFS snapshot + clone per branch (macOS VM, Linux)</li><li class="ok">btrfs subvolume snapshots (Windows)</li>
       <li class="ok">Pool / filesystem created on a loopback file</li><li class="ok">One storage interface for both</li>
-      <li class="part">Repeated <code>reset --from</code> a non-main parent</li></ul></td><td class="tb">VM §2 (ZFS); btrfs manual on Windows</td></tr>
+      <li class="ok">Delete removes the clone's own origin snapshot, so a non-main parent can be re-used</li></ul></td><td class="tb">Unit; VM §2, §2b (ZFS); btrfs manual on Windows</td></tr>
     <tr data-id="C2" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">C2</td><td><b>Branch lifecycle</b><ul class="subs">
       <li class="ok">Create, list, delete</li><li class="ok">Reset to parent</li><li class="ok">Suspend / resume</li>
-      <li class="ok">Recreate a container from its surviving data</li><li class="todo">Name validation in the CLI</li></ul></td><td class="tb">Unit; VM §2, §4</td></tr>
+      <li class="ok">Recreate a container from its surviving data</li><li class="ok">Create from any branch (<code>--from</code>, REST <code>from</code>, Dashboard picker)</li><li class="todo">Name validation in the CLI</li></ul></td><td class="tb">Unit; VM §2, §2b, §4</td></tr>
     <tr data-id="C3" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">C3</td><td><b>Protection of <code>main</code></b><ul class="subs">
       <li class="ok">Delete and reset refused</li><li class="ok">Suspend refused for main, the HA standby and whichever container serves main</li></ul></td><td class="tb">Unit; VM §4, §6</td></tr>
     <tr data-id="C4" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">C4</td><td><b>Private networking (no host ports)</b><ul class="subs">
@@ -308,7 +308,7 @@
     <tr data-id="G4" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">G4</td><td><b>Web sessions &amp; signup control</b><ul class="subs">
       <li class="ok">httpOnly session cookie</li><li class="ok">Signup can be closed</li></ul></td><td class="tb">Unit (<code>TestSessions</code>)</td></tr>
     <tr data-id="G5" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">G5</td><td><b>OAuth (GitHub / Google)</b><ul class="subs">
-      <li class="ok">Sign-in flows built</li><li class="todo">Correct default URLs</li><li class="todo">Tested with a real OAuth app</li></ul></td><td class="tb">None</td></tr>
+      <li class="ok">Sign-in flows built</li><li class="ok">Defaults match what the engine serves (<code>https://localhost:8080</code>; web origin = public URL)</li><li class="ok">Session cookie <code>Secure</code> / <code>SameSite</code> follow the origin</li><li class="todo">Tested with a real OAuth app</li></ul></td><td class="tb">Unit; VM §1b</td></tr>
   </table>
 </section>
 
@@ -393,9 +393,10 @@
       <li class="ok">Columns inferred from top-level keys</li><li class="ok">An invalid document fails the import, naming its element or line</li></ul></td><td class="tb">Unit; VM §10, §11</td></tr>
     <tr data-id="I7" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">I7</td><td><b>From CSV</b><ul class="subs">
       <li class="ok">Table from the header, exact column names</li><li class="todo">Typed columns (all text today)</li></ul></td><td class="tb">Manual</td></tr>
-    <tr data-id="I8" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">I8</td><td><b>Continuous replication &amp; cutover</b><ul class="subs">
+    <tr data-id="I8" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">I8</td><td><b>Continuous replication &amp; cutover</b><ul class="subs">
       <li class="ok">Initial copy + streaming (logical replication)</li><li class="ok">Cutover keeps data (CLI)</li>
-      <li class="todo">Cutover from REST / web</li><li class="todo">Automated test</li></ul></td><td class="tb">Manual</td></tr>
+      <li class="ok">Status and cutover from REST and the Import page</li><li class="ok">A replicating branch is never auto-suspended</li>
+      <li class="ok">Automated test (VM §5b) and driven in the browser</li></ul></td><td class="tb">Unit; VM §5b</td></tr>
     <tr data-id="I9" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">I9</td><td><b>Guard handling during import</b><ul class="subs">
       <li class="ok">Guardrail paused, recording stays on</li><li class="ok">Re-armed even after a crash</li></ul></td><td class="tb">Manual</td></tr>
     <tr data-id="I10" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">I10</td><td><b>Live progress (CLI &amp; SSE)</b><ul class="subs">
@@ -461,8 +462,8 @@
       <li class="ok">Live tiles</li><li class="ok">Branch table: create, suspend, resume, delete, copy DSN</li></ul></td><td class="tb">Manual</td></tr>
     <tr data-id="L4" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">L4</td><td><b>SQL console &amp; browser</b><ul class="subs">
       <li class="ok">Schema sidebar, rows, structure, indexes</li><li class="ok">SQL editor</li><li class="ok">System tables hidden by default, with a show button</li><li class="ok">Runs as the signed-in user; one-run override switch</li><li class="ok">Per-rule override for policy blocks</li></ul></td><td class="tb">Manual; API in v2 §6</td></tr>
-    <tr data-id="L5" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">L5</td><td><b>Blackbox page</b><ul class="subs">
-      <li class="ok">Entries per branch with badges</li><li class="todo">Table / risk / date filters</li><li class="todo">Verify button, statement and session</li></ul></td><td class="tb">Manual</td></tr>
+    <tr data-id="L5" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">L5</td><td><b>Blackbox page</b><ul class="subs">
+      <li class="ok">Entries per branch with badges</li><li class="ok">Table / risk / date filters, and "Clear filters"</li><li class="ok">Verify button; a row expands to its statement and session</li></ul></td><td class="tb">v2 §5b; browser</td></tr>
     <tr data-id="L6" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">L6</td><td><b>API keys page</b><ul class="subs">
       <li class="ok">Create, copy, list, revoke</li></ul></td><td class="tb">Manual</td></tr>
     <tr data-id="L7" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">L7</td><td><b>Landing, Guide &amp; Docs pages</b><ul class="subs">

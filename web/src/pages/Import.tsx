@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { importDBStream, importFileStream, type ImportEvent, type ImportResult } from '../api'
+import {
+  cutoverReplication, importDBStream, importFileStream, listReplication,
+  type ImportEvent, type ImportResult, type Replication,
+} from '../api'
+import { useConfirm } from '../confirm'
 
 type Line = { text: string; kind?: 'err' | 'ok' }
 type Prog = { done: number; total: number; label: string }
@@ -139,8 +143,8 @@ export default function Import() {
                 <>
                   <b style={{ color: 'var(--green)' }}>✓ Continuous replication active → “{result.target}”</b>
                   <p className="muted" style={{ margin: '6px 0 10px' }}>
-                    The initial copy is running and changes now stream continuously. Cut over with{' '}
-                    <code>vdb import-cutover {result.target}</code>.
+                    The initial copy is running and changes now stream continuously. Follow it under{' '}
+                    <b>Continuous imports</b> below, and cut over once every table is copied.
                   </p>
                 </>
               ) : (
@@ -162,6 +166,83 @@ export default function Import() {
         Large or scripted migrations — and SQLite files — can also use the <code>vdb import</code> CLI, which streams
         a file from anywhere on your machine into a new instance.
       </p>
+      <ContinuousImports />
+    </div>
+  )
+}
+
+// Continuous imports still replicating, on any branch: how far the initial copy
+// has got, when the source last sent anything, and the cutover that makes the
+// branch standalone. Polls, so it also finds imports started from the CLI or
+// before this page was opened.
+function ContinuousImports() {
+  const confirm = useConfirm()
+  const [list, setList] = useState<Replication[] | null>(null)
+  const [err, setErr] = useState('')
+  const [done, setDone] = useState('')
+  const [busy, setBusy] = useState('')
+
+  useEffect(() => {
+    let live = true
+    const load = () => listReplication().then(l => { if (live) { setList(l); setErr('') } })
+      .catch(e => { if (live) setErr((e as Error).message) })
+    load()
+    const t = setInterval(load, 4000)
+    return () => { live = false; clearInterval(t) }
+  }, [])
+
+  const cutover = async (r: Replication) => {
+    const ok = await confirm({
+      title: 'Cut over',
+      message: r.tables_ready === r.tables
+        ? <>Stop replicating into <b>{r.branch}</b>? Its data stays; later changes on the source won't arrive.</>
+        : <>Only {r.tables_ready} of {r.tables} tables have finished copying into <b>{r.branch}</b>. Cutting over now leaves the rest incomplete. Stop replicating anyway?</>,
+      confirmText: 'Cut over', danger: r.tables_ready !== r.tables,
+    })
+    if (!ok) return
+    setBusy(r.branch); setErr(''); setDone('')
+    try {
+      const res = await cutoverReplication(r.branch)
+      setDone(`✓ ${res.branch} is now a standalone branch (${res.tables} table${res.tables === 1 ? '' : 's'}).`)
+      setList(l => (l || []).filter(x => x.branch !== r.branch))
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setBusy('')
+    }
+  }
+
+  return (
+    <div className="panel" style={{ marginTop: 18 }}>
+      <h3 style={{ marginTop: 0 }}>Continuous imports</h3>
+      <p className="muted" style={{ marginTop: 0 }}>
+        Branches still replicating from a PostgreSQL source. Cut over once every table has copied: replication stops and the branch keeps its data.
+      </p>
+      {err && <div className="err">{err}</div>}
+      {done && <div className="okmsg">{done}</div>}
+      {list === null && !err && <div className="muted">Loading…</div>}
+      {list && list.length === 0 && <div className="muted">Nothing is replicating.</div>}
+      {list && list.length > 0 && (
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Branch</th><th>Initial copy</th><th>Last message from source (UTC)</th><th /></tr></thead>
+            <tbody>
+              {list.map(r => (
+                <tr key={r.branch}>
+                  <td><code>{r.branch}</code></td>
+                  <td>{r.tables_ready === r.tables ? <span style={{ color: 'var(--green)' }}>done — {r.tables} of {r.tables} tables, streaming</span> : <>{r.tables_ready} of {r.tables} tables</>}</td>
+                  <td className="mono muted">{r.last_message_at ? r.last_message_at.replace('T', ' ').replace('Z', '') : '—'}</td>
+                  <td style={{ textAlign: 'right' }}>
+                    <button className={r.tables_ready === r.tables ? 'primary' : 'ghost'} disabled={busy !== ''} onClick={() => cutover(r)}>
+                      {busy === r.branch ? 'Cutting over…' : 'Cut over'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

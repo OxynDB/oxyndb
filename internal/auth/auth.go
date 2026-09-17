@@ -210,6 +210,29 @@ func envOr(k, def string) string {
 	return def
 }
 
+// DefaultPublicURL is where the control plane serves the API and the web console
+// out of the box: TLS on port 8080.
+const DefaultPublicURL = "https://localhost:8080"
+
+// urlDefaults resolves the public URL (OAuth callbacks) and the web origin (CORS,
+// the redirect after an OAuth login, the session cookie). The console is served
+// by the control plane itself, so the web origin defaults to the public URL. The
+// old defaults — http://localhost:8080 and the retired Vite dev server on
+// http://localhost:5173 — sent an OAuth login back to a page that doesn't exist
+// and registered a callback over plain HTTP. A separately hosted UI sets
+// VECTORADB_WEB_ORIGIN.
+func urlDefaults(getenv func(string) string) (publicURL, webOrigin string) {
+	publicURL = strings.TrimRight(strings.TrimSpace(getenv("VECTORADB_PUBLIC_URL")), "/")
+	if publicURL == "" {
+		publicURL = DefaultPublicURL
+	}
+	webOrigin = strings.TrimRight(strings.TrimSpace(getenv("VECTORADB_WEB_ORIGIN")), "/")
+	if webOrigin == "" {
+		webOrigin = publicURL
+	}
+	return publicURL, webOrigin
+}
+
 // OpenFromEnv builds Config from VECTORADB_* env vars and opens the store.
 func OpenFromEnv() (*Store, error) {
 	home, err := os.UserHomeDir()
@@ -218,10 +241,11 @@ func OpenFromEnv() (*Store, error) {
 	}
 	dir := filepath.Join(home, ".vectoradb")
 	_ = os.MkdirAll(dir, 0o755)
+	public, web := urlDefaults(os.Getenv)
 	return Open(Config{
 		DBPath:     envOr("VECTORADB_DB", filepath.Join(dir, "vectoradb.db")),
-		WebOrigin:  envOr("VECTORADB_WEB_ORIGIN", "http://localhost:5173"),
-		PublicURL:  envOr("VECTORADB_PUBLIC_URL", "http://localhost:8080"),
+		WebOrigin:  web,
+		PublicURL:  public,
 		SignupOpen: os.Getenv("VECTORADB_SIGNUP") != "closed",
 		GitHub:     OAuthApp{os.Getenv("VECTORADB_GITHUB_CLIENT_ID"), os.Getenv("VECTORADB_GITHUB_CLIENT_SECRET")},
 		Google:     OAuthApp{os.Getenv("VECTORADB_GOOGLE_CLIENT_ID"), os.Getenv("VECTORADB_GOOGLE_CLIENT_SECRET")},
