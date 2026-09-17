@@ -70,8 +70,11 @@ export const createBranch = (name: string) => req('POST', `${API}/api/branches`,
 export const deleteBranch = (name: string) => req('DELETE', `${API}/api/branches/${name}`)
 export const suspendBranch = (name: string) => req('POST', `${API}/api/branches/${name}/suspend`)
 export const resumeBranch = (name: string) => req('POST', `${API}/api/branches/${name}/resume`)
-export const runQuery = (name: string, sql: string) =>
-  req('POST', `${API}/api/branches/${name}/query`, { sql }) as Promise<QueryResult>
+// allowDestructive applies SET vdb.allow_destructive=on to this one run. The
+// query runs as the signed-in user, so it counts only for admins of the branch.
+export const runQuery = (name: string, sql: string, opts: { allowDestructive?: boolean } = {}) =>
+  req('POST', `${API}/api/branches/${name}/query`,
+    opts.allowDestructive ? { sql, allow_destructive: true } : { sql }) as Promise<QueryResult>
 export const getLedger = (name: string, filters: Record<string, string> = {}) => {
   const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v)).toString()
   return req('GET', `${API}/api/branches/${name}/ledger${qs ? '?' + qs : ''}`) as Promise<QueryResult>
@@ -131,6 +134,15 @@ export const checkPolicy = (branch: string, sql: string) =>
   req('POST', `${policies(branch)}/check`, { sql }) as Promise<PolicyCheckResult>
 export const getPolicyEvaluations = (branch: string, limit = 20) =>
   req('GET', `${policies(branch)}/evaluations?limit=${limit}`) as Promise<PolicyEvaluation[]>
+
+// Who may override blocking rules (vdb_admin) on a branch. Anyone signed in may
+// read it; granting and revoking need vdb_admin there.
+export type BranchAdmins = { admins: string[]; you: string; you_are_admin: boolean }
+const admins = (branch: string) => `${API}/api/branches/${branch}/admins`
+export const getAdmins = (branch: string) => req('GET', admins(branch)) as Promise<BranchAdmins>
+export const grantAdmin = (branch: string, email: string) => req('POST', admins(branch), { email })
+export const revokeAdmin = (branch: string, email: string) =>
+  req('DELETE', `${admins(branch)}/${encodeURIComponent(email)}`)
 
 // --- migration (streamed as Server-Sent Events) ---
 export type ImportResult = { status: string; target: string; tables: number }

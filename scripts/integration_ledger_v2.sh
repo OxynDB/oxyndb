@@ -458,6 +458,30 @@ assert_eq "REST: a built-in rule can't be removed (409)" \
 $S admin revoke "$USER_EMAIL" --branch main >/dev/null 2>&1
 assert_eq "REST: a non-admin can't change a rule (403)" \
   "$(curl -sk -o /dev/null -w '%{http_code}' -X PUT -H "$AUTH" -d '{"action":"block"}' "$API/api/branches/main/policies/drop-column")" "403"
+
+# L4/H8: the console used to log every user in as the shared vdbclient role,
+# which is never in vdb_admin, so nobody could override the guardrail from it.
+cq() { curl -sk -X POST -H "$AUTH" -H 'Content-Type: application/json' "$API/api/branches/main/query" \
+  -d "$(python3 -c 'import json,sys; print(json.dumps({"sql": sys.argv[1], "allow_destructive": sys.argv[2] == "1"}))' "$1" "${2:-0}")"; }
+admins_you() { curl -sk -H "$AUTH" "$API/api/branches/main/admins" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["you"], d["you_are_admin"])'; }
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2console" >/dev/null
+cq "CREATE TABLE v2console(x int)" >/dev/null
+assert_eq "console: runs as the signed-in user" \
+  "$(cq 'SELECT session_user' | python3 -c 'import sys,json; print(json.load(sys.stdin)["rows"][0][0])')" "$USER_EMAIL"
+assert_eq "REST: admins says the caller is not one" "$(admins_you)" "$USER_EMAIL False"
+assert_eq "console: a non-admin's override is still refused" "$(cq 'DROP TABLE v2console' 1 | grep -c 'blocked by policy')" "1"
+assert_eq "REST: a non-admin can't grant override permission (403)" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' -X POST -H "$AUTH" -d "{\"email\":\"$USER_EMAIL\"}" "$API/api/branches/main/admins")" "403"
+$S admin grant "$USER_EMAIL" --branch main >/dev/null 2>&1
+assert_eq "REST: admins says the caller now is one" "$(admins_you)" "$USER_EMAIL True"
+assert_eq "console: without the override an admin is still blocked" "$(cq 'DROP TABLE v2console' | grep -c 'blocked by policy')" "1"
+assert_eq "console: with the override an admin's DROP goes through" \
+  "$(cq 'DROP TABLE v2console' 1 | grep -c '"error"')|$(pg vec-main "SELECT to_regclass('public.v2console') IS NULL")" "0|t"
+assert_eq "REST: granting an account that doesn't exist is 404" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' -X POST -H "$AUTH" -d '{"email":"nobody@vectoradb.dev"}' "$API/api/branches/main/admins")" "404"
+assert_eq "REST: revoking someone who isn't an admin is 404" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' -X DELETE -H "$AUTH" "$API/api/branches/main/admins/nobody@vectoradb.dev")" "404"
+$S admin revoke "$USER_EMAIL" --branch main >/dev/null 2>&1
 assert_eq "REST: check previews matches without running" \
   "$(curl -sk -X POST -H "$AUTH" -d '{"sql":"ALTER TABLE v2pol DROP COLUMN b"}' "$API/api/branches/main/policies/check" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["command"], ",".join(m["rule_id"] for m in d["matches"]))')" \
   "ALTER TABLE drop-column"

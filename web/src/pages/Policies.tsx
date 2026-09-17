@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  addPolicyRule, checkPolicy, getBranches, getPolicyEvaluations, getPolicyRules, removePolicyRule, updatePolicyRule,
-  type Branch, type PolicyAction, type PolicyCheckResult, type PolicyEvaluation, type PolicyRule,
+  addPolicyRule, checkPolicy, getAdmins, getBranches, getPolicyEvaluations, getPolicyRules, grantAdmin, removePolicyRule,
+  revokeAdmin, updatePolicyRule,
+  type Branch, type BranchAdmins, type PolicyAction, type PolicyCheckResult, type PolicyEvaluation, type PolicyRule,
 } from '../api'
 
 // Blackbox policy gate: rules checked on every schema change before it runs.
@@ -21,8 +22,15 @@ export default function Policies() {
   const [check, setCheck] = useState<PolicyCheckResult | null>(null)
   const [adding, setAdding] = useState(false)
   const [draft, setDraft] = useState(emptyDraft)
+  const [admins, setAdmins] = useState<BranchAdmins | null>(null)
+  const [newAdmin, setNewAdmin] = useState('')
 
   useEffect(() => { getBranches().then(setBranches).catch(() => {}) }, [])
+
+  const loadAdmins = useCallback(async () => {
+    try { setAdmins(await getAdmins(branch)) } catch { setAdmins(null) }
+  }, [branch])
+  useEffect(() => { setAdmins(null); setNewAdmin(''); loadAdmins() }, [loadAdmins])
 
   const load = useCallback(async () => {
     try {
@@ -62,8 +70,8 @@ export default function Policies() {
       <h1>Policies</h1>
       <p className="lead" style={{ marginTop: -2 }}>
         Blackbox checks every schema change against these rules before it runs. <b>Warn</b> lets it through with a notice;{' '}
-        <b>block</b> refuses it with SQLSTATE <code>VDB01</code> and records the attempt. Changing rules needs{' '}
-        <code>vdb_admin</code> (<code>vdb admin grant &lt;email&gt;</code>).
+        <b>block</b> refuses it with SQLSTATE <code>VDB01</code> and records the attempt. Changing rules, and overriding a
+        block, needs <code>vdb_admin</code> — manage who has it under <a href="#who-can-override">Who can override</a>.
       </p>
 
       <div className="row" style={{ flexWrap: 'wrap', gap: 10 }}>
@@ -129,6 +137,49 @@ export default function Policies() {
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="panel" id="who-can-override" style={{ marginTop: 18 }}>
+        <h3 style={{ marginTop: 0 }}>Who can override</h3>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Admins of <code>{branch}</code> may run a blocked change — tick <b>Allow destructive changes</b> in the SQL
+          console — and may grant or revoke this here. A grant on <code>main</code> is copied into branches created
+          after it; branches that already exist need their own.
+        </p>
+        {admins && !admins.you_are_admin && (
+          <div className="muted" style={{ marginBottom: 10 }}>
+            You (<code>{admins.you}</code>) aren’t an admin on <code>{branch}</code>, so you can’t change this list. An admin can
+            grant you here, or run <code>vdb admin grant {admins.you} --branch {branch}</code>.
+          </div>
+        )}
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Admin</th><th /></tr></thead>
+            <tbody>
+              {!admins && <tr><td colSpan={2} className="muted">loading…</td></tr>}
+              {admins && admins.admins.length === 0 && (
+                <tr><td colSpan={2} className="muted">no admins — only superusers can override on this branch</td></tr>
+              )}
+              {admins?.admins.map(email => (
+                <tr key={email}>
+                  <td>{email}{email === admins.you && <span className="muted"> · you</span>}</td>
+                  <td style={{ textAlign: 'right' }}>
+                    <button className="ghost danger" disabled={busy || !admins.you_are_admin || admins.admins.length === 1}
+                      title={admins.admins.length === 1 ? 'The last admin can’t be removed here — grant someone else first' : ''}
+                      onClick={() => act(async () => { await revokeAdmin(branch, email); await loadAdmins() })}>Revoke</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {admins?.you_are_admin && (
+          <form className="row" style={{ marginTop: 10, flexWrap: 'wrap', gap: 10 }}
+            onSubmit={e => { e.preventDefault(); act(async () => { await grantAdmin(branch, newAdmin.trim()); setNewAdmin(''); await loadAdmins() }) }}>
+            <input type="email" placeholder="user@example.com" value={newAdmin} onChange={e => setNewAdmin(e.target.value)} style={{ flex: '1 1 240px' }} />
+            <button className="primary" type="submit" disabled={busy || !newAdmin.trim()}>Grant</button>
+          </form>
+        )}
       </div>
 
       <div className="panel" style={{ marginTop: 18 }}>

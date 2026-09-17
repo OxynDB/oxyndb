@@ -103,7 +103,7 @@
   <div class="meta">
     <b>What this is:</b> every VectoraDB feature and its sub-features — built or not, and how it was tested — so it's clear where we are and what's next.
     How each feature works is in <code>VDB_Feature_Implemented.pdf</code> (same ids).<br>
-    <b>Last updated:</b> 16 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>c71ce45</code> (v0.8.5) + agent reachability (<code>fix/agent-reachability</code>)<br>
+    <b>Last updated:</b> 17 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>008b009</code> (v0.8.5 + agent reachability, PR #39) + console permissions (<code>fix/console-permissions</code>)<br>
     <b>Source:</b> <code>docs/VDB_Checklist.html</code> → <code>make feature-doc</code> → this PDF
   </div>
 
@@ -338,7 +338,7 @@
       <li class="ok">Help and output say it's a point-in-time restore of main</li><li class="ok">Points to H13 for a branch from before a change</li></ul></td><td class="tb">Unit (help text); VM §3 (the restore)</td></tr>
     <tr data-id="H8" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">H8</td><td><b>Override permission (vdb_admin) &amp; upgrade</b><ul class="subs">
       <li class="ok"><code>vdb admin grant|revoke|list</code></li><li class="ok">First user granted automatically</li>
-      <li class="ok"><code>vdb blackbox upgrade [--all]</code></li></ul></td><td class="tb">v2 §1b</td></tr>
+      <li class="ok"><code>vdb blackbox upgrade [--all]</code></li><li class="ok">Grant / revoke from the web (admins only)</li></ul></td><td class="tb">v2 §1b, §6</td></tr>
     <tr data-id="H9" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">H9</td><td><b>Blackbox 2.0 capture</b><ul class="subs">
       <li class="ok">Transaction id and WAL position per entry</li><li class="ok">Task, tool-call hash, override use</li>
       <li class="ok">Fail-safe, append-only</li><li class="ok">Kill switch not settable by clients</li></ul></td><td class="tb">Unit; v2 §2</td></tr>
@@ -460,7 +460,7 @@
     <tr data-id="L3" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">L3</td><td><b>Dashboard</b><ul class="subs">
       <li class="ok">Live tiles</li><li class="ok">Branch table: create, suspend, resume, delete, copy DSN</li></ul></td><td class="tb">Manual</td></tr>
     <tr data-id="L4" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">L4</td><td><b>SQL console &amp; browser</b><ul class="subs">
-      <li class="ok">Schema sidebar, rows, structure, indexes</li><li class="ok">SQL editor</li></ul></td><td class="tb">Manual</td></tr>
+      <li class="ok">Schema sidebar, rows, structure, indexes</li><li class="ok">SQL editor</li><li class="ok">VectoraDB system tables folded apart</li><li class="ok">Runs as the signed-in user; one-run override switch</li></ul></td><td class="tb">Manual; API in v2 §6</td></tr>
     <tr data-id="L5" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">L5</td><td><b>Blackbox page</b><ul class="subs">
       <li class="ok">Entries per branch with badges</li><li class="todo">Table / risk / date filters</li><li class="todo">Verify button, statement and session</li></ul></td><td class="tb">Manual</td></tr>
     <tr data-id="L6" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">L6</td><td><b>API keys page</b><ul class="subs">
@@ -472,7 +472,7 @@
       <li class="part">Entry list needs a refresh to show a new change</li></ul></td><td class="tb">Type-check + build; browser review 16 Sep</td></tr>
     <tr data-id="L9" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">L9</td><td><b>Policies page</b><ul class="subs">
       <li class="ok">Rules, warn/block, custom rules, preview, evaluations</li><li class="ok">Used signed in; matched the CLI, wrote only to the chosen branch</li>
-      <li class="ok">Non-admin change refused with a readable message</li></ul></td><td class="tb">Type-check + build; API in v2 §6; browser review 16 Sep</td></tr>
+      <li class="ok">Non-admin change refused with a readable message</li><li class="ok">Who can override: list, grant, revoke</li></ul></td><td class="tb">Type-check + build; API in v2 §6; browser review 16 Sep</td></tr>
     <tr data-id="L10" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">L10</td><td><b>App sidebar layout</b><ul class="subs">
       <li class="ok">Every link opens its page, highlighted, with breadcrumb</li><li class="ok">Collapse persists across a reload; theme toggle persists</li>
       <li class="ok">No console errors on any page</li><li class="todo">Under-860px drawer (needs a manual look)</li></ul></td><td class="tb">Type-check + build; browser review 16 Sep</td></tr>

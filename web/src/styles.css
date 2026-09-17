@@ -530,3 +530,17 @@ th.expand-col, td.expand-col { width: 34px; padding-left: 8px; padding-right: 0;
   .app-content { padding: 20px 16px 60px; }
 }
 @media (prefers-reduced-motion: reduce) { .sidebar { transition: none; } }
+
+/* SQL console: reload feedback, the folded system schema, and the override */
+.obj-head button:disabled { cursor: default; }
+.obj-head button.spinning { display: inline-block; animation: vdb-spin .8s linear infinite; color: var(--accent); }
+.obj-toggle { display: flex; justify-content: space-between; align-items: center; width: 100%; background: none; border: none;
+  cursor: pointer; font: inherit; font-size: 10.5px; text-align: left; margin-top: 6px; border-top: 1px solid var(--border); padding-top: 10px; }
+.obj-toggle:hover { color: var(--muted); }
+.obj-count { font-size: 10px; padding: 0 6px; border-radius: 999px; background: color-mix(in srgb, var(--faint) 18%, transparent); }
+.obj-error { padding: 10px 14px; font-size: 12.5px; color: color-mix(in srgb, var(--red) 78%, var(--text)); }
+.override-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; user-select: none; }
+.override-toggle.on { color: var(--red); font-weight: 600; }
+.override-toggle input:disabled + * { opacity: .6; }
+.override-help { margin-top: 10px; padding: 12px 14px; border-radius: var(--radius); font-size: 13.5px;
+  border: 1px solid color-mix(in srgb, var(--red) 35%, var(--border)); background: color-mix(in srgb, var(--red) 6%, var(--panel)); }
