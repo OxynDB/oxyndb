@@ -24,6 +24,17 @@ SQLSTATE 42501 (insufficient_privilege)
 The gate runs after that guardrail (event trigger `vdb_policy_start`, which sorts
 after `vdb_guard_start`), so a statement the guardrail blocks never reaches it.
 
+The guardrail is per command, in `vdb.policy` (op → action):
+
+| action | effect |
+|---|---|
+| `block` | refused unless a superuser or `vdb_admin` member sets `vdb.allow_destructive=on` |
+| `flag` | runs; its Blackbox entry is recorded `FLAGGED` |
+| `allow` | runs, recorded as usual (the same as not listing the command) |
+
+Any other action is refused. Every change to `vdb.policy` is recorded, with who
+made it, in the append-only `vdb.policy_history`.
+
 ## Block: an ERROR with SQLSTATE `VDB01`
 
 | Part | Value |
@@ -77,7 +88,7 @@ block ERROR is raised (the first blocking rule by `rule_id` order).
 | `hint` | string | Suggested next step (the rule's own text, or a default). |
 | `override` | string or null | Who may override a block: `"vdb_admin"`, or null if the rule allows no override. Always null for warn. |
 | `evaluation_id` | integer or null | Row id in `vdb.ledger_policy_evaluations`; null if recording failed. |
-| `blackbox_id` | integer or null | Id of the `BLOCKED` Blackbox entry (block only); null for warn or if recording failed. |
+| `blackbox_id` | integer or null | Id of the `BLOCKED` Blackbox entry (block only); null for warn, if recording failed, or when the same transaction had already written to Blackbox (see below). |
 | `impact` | object or null | Reserved for impact analysis (Phase 7). Always null in v1. |
 
 Rules for clients:
@@ -109,6 +120,49 @@ if errors.As(err, &pgErr) && pgErr.Code == "VDB01" { json.Unmarshal([]byte(pgErr
 
 Warnings arrive through each driver's notice handler (psycopg `add_notice_handler`,
 node-postgres `client.on('notice')`, pgx `OnNotice`) with `sqlstate`/`code` `VDB02`.
+
+## What a rule's pattern is matched against
+
+A rule is about **the statement being run**, not everything the client sent with
+it. The pattern is matched, case-insensitively, against that one statement with its
+comments removed and its string literals emptied. So:
+
+| Sent in one message | `drop-column` (pattern `drop … column`) |
+|---|---|
+| `ALTER TABLE t ADD COLUMN note text DEFAULT 'drop column later'` | not matched — only a literal says it |
+| `-- drop column soon` then `ALTER TABLE t ADD COLUMN n int` | not matched — only a comment says it |
+| `ALTER TABLE t ADD COLUMN n int; ALTER TABLE t DROP COLUMN m` | matched once, for the second statement |
+| `ALTER TABLE t DROP /* x */ COLUMN m` | matched — the comment is removed, not the words around it |
+
+Quoted identifiers are kept (they are object names, which a rule may target).
+
+Where the statement can't be picked out with certainty, the pattern is matched
+against the whole query as sent — what the gate did before — so nothing that
+matched before stops matching:
+
+- DDL run from **inside** a function, a `DO` block or a trigger is matched against
+  the statement Postgres actually ran, as reported in its error context (after any
+  `EXECUTE` string was built, so `EXECUTE 'ALTER TABLE t DR' || 'OP COLUMN m'` is
+  caught), and also against the whole query;
+- a query string over 256 KB, or a run whose statements can't be lined up with the
+  commands that fire, falls back to the whole query.
+
+`vdb policy check` / `…/policies/check` / MCP `policy_check` match the same way: a
+rule matches if it matches any statement in the text with the given command tag.
+
+These rules guard against mistakes. They are not a security boundary against a
+client determined to evade them: a pattern is text, and text can be written many
+ways. Use the command-level guardrail (`vdb.policy`, below) or database privileges
+where a change must be impossible.
+
+### A block after a write in the same transaction
+
+A blocked attempt is written to Blackbox through a separate connection, so it
+survives the rollback. If the transaction has already written to Blackbox —
+`BEGIN; CREATE TABLE a(); ALTER TABLE b DROP COLUMN c;` — that connection would
+wait for this one forever. In that case the `BLOCKED` entry is skipped with a
+`WARNING`, `blackbox_id` is null, and the evaluation row is still recorded. The
+same applies to the guardrail below.
 
 ## Overriding a block
 

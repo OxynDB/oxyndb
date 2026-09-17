@@ -58,7 +58,7 @@ export default function Docs() {
           <tr><td><code>POST /api/branches</code></td><td>Create a branch — {'{ "name": "qa" }'}</td></tr>
           <tr><td><code>DELETE /api/branches/{'{name}'}</code></td><td>Delete a branch</td></tr>
           <tr><td><code>POST /api/branches/{'{name}'}/suspend|resume</code></td><td>Suspend / resume</td></tr>
-          <tr><td><code>POST /api/branches/{'{name}'}/query</code></td><td>Run SQL as the signed-in user — {'{ "sql": "…", "allow_destructive": false }'}</td></tr>
+          <tr><td><code>POST /api/branches/{'{name}'}/query</code></td><td>Run SQL as the signed-in user — {'{ "sql": "…", "allow_destructive": false, "allow_rules": [] }'}</td></tr>
           <tr><td><code>GET /api/branches/{'{name}'}/ledger</code></td><td>Blackbox entries (filters: <code>actor</code>, <code>table</code>, <code>risk</code>, <code>status</code>, <code>kind</code>, <code>since</code>, <code>until</code>)</td></tr>
           <tr><td><code>GET …/ledger/verify</code> · <code>…/integrity</code> · <code>…/export</code> · <code>…/entries</code> · <code>…/sessions</code></td><td>Verify the hash chain, check against anchors, export JSONL, list entries and agent sessions</td></tr>
           <tr><td><code>POST …/ledger/checkpoint</code> · <code>POST …/ledger/{'{id}'}/branch</code></td><td>Anchor new entries; branch <code>main</code> from just before an entry</td></tr>

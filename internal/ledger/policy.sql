@@ -34,7 +34,7 @@ $$;
 CREATE TABLE IF NOT EXISTS vdb.policy_rules (
   rule_id     text PRIMARY KEY CHECK (rule_id ~ '^[a-z0-9][a-z0-9-]{0,62}$'),
   command_tag text NOT NULL,                 -- e.g. 'ALTER TABLE'
-  pattern     text CHECK (pattern IS NULL OR vdb._valid_regex(pattern)), -- case-insensitive, over the statement; NULL = any
+  pattern     text CHECK (pattern IS NULL OR vdb._valid_regex(pattern)), -- case-insensitive, over the statement (comments and literals removed); NULL = any
   action      text NOT NULL DEFAULT 'warn' CHECK (action IN ('warn','block')),
   reason      text NOT NULL,
   hint        text,
@@ -143,11 +143,15 @@ $$;
 
 -- Preview: the rules a statement with this command tag would trigger, without
 -- running it (vdb policy check / REST …/policies/check / MCP policy_check).
+-- Matched the way the gate matches: against each statement in the text with this
+-- command tag, without comments or string literals (vdb._statement_candidates).
 CREATE OR REPLACE FUNCTION vdb.policy_check(command text, statement text) RETURNS SETOF jsonb
 LANGUAGE sql STABLE AS $$
   SELECT vdb._policy_detail(r, command, NULL, NULL)
   FROM vdb.policy_rules r
-  WHERE r.enabled AND r.command_tag = command AND (r.pattern IS NULL OR statement ~* r.pattern)
+  WHERE r.enabled AND r.command_tag = command
+    AND (r.pattern IS NULL OR EXISTS (
+          SELECT 1 FROM unnest(vdb._statement_candidates(statement, command)) x WHERE x ~* r.pattern))
   ORDER BY (r.action = 'block') DESC, r.rule_id;
 $$;
 GRANT EXECUTE ON FUNCTION vdb.policy_check(text, text) TO vdbclient;
@@ -157,6 +161,8 @@ CREATE OR REPLACE FUNCTION vdb.policy_ddl_start() RETURNS event_trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, vdb AS $$
 DECLARE
   q        text;
+  texts    text[];
+  ctx      text;
   r        vdb.policy_rules;
   blk      vdb.policy_rules;
   blocking boolean := false;
@@ -170,10 +176,21 @@ BEGIN
   -- 1. Match and warn. Nothing in here may stop the statement.
   BEGIN
     q := current_query();
+    -- A rule is about the statement being run, not everything sent with it: its
+    -- pattern is matched against that statement without comments or string
+    -- literals, or against the whole query when that can't be established
+    -- (vdb._statement_texts in ledger.sql).
+    BEGIN
+      GET DIAGNOSTICS ctx = PG_CONTEXT;
+      texts := vdb._statement_texts('start', TG_TAG, ctx);
+    EXCEPTION WHEN OTHERS THEN
+      texts := ARRAY[q];
+    END;
     allow := string_to_array(regexp_replace(coalesce(current_setting('vdb.policy_allow', true), ''), '\s', '', 'g'), ',');
     SELECT * INTO c FROM vdb._ctx();
     FOR r IN SELECT * FROM vdb.policy_rules
-             WHERE enabled AND command_tag = TG_TAG AND (pattern IS NULL OR q ~* pattern)
+             WHERE enabled AND command_tag = TG_TAG
+               AND (pattern IS NULL OR EXISTS (SELECT 1 FROM unnest(texts) x WHERE x ~* pattern))
              ORDER BY (action = 'block') DESC, rule_id LOOP
       IF r.action = 'block' THEN
         IF may IS NULL THEN
@@ -212,10 +229,17 @@ BEGIN
   eval_id := NULL;
   BEGIN
     conn := 'host=/var/run/postgresql dbname=' || current_database() || ' user=' || current_user;
-    SELECT t.id INTO bb_id FROM dblink(conn, format(
-      $f$INSERT INTO vdb.schema_ledger (actor,actor_kind,tool,session,branch,command_tag,statement,status,risk)
-         VALUES (%L,%L,%L,%L,%L,%L,%L,'BLOCKED','policy') RETURNING id$f$,
-      c.actor, c.actor_kind, c.tool, c.session, c.branch, TG_TAG, q)) AS t(id bigint);
+    -- Not when this transaction already wrote to Blackbox: the second connection
+    -- would wait for this one forever (vdb._holds_chain_lock). The evaluation row
+    -- below takes no such lock and is still recorded.
+    IF vdb._holds_chain_lock() THEN
+      RAISE WARNING 'VectoraDB Blackbox policy: this blocked attempt is not recorded in Blackbox, because this transaction has already written to it';
+    ELSE
+      SELECT t.id INTO bb_id FROM dblink(conn, format(
+        $f$INSERT INTO vdb.schema_ledger (actor,actor_kind,tool,session,branch,command_tag,statement,status,risk)
+           VALUES (%L,%L,%L,%L,%L,%L,%L,'BLOCKED','policy') RETURNING id$f$,
+        c.actor, c.actor_kind, c.tool, c.session, c.branch, TG_TAG, q)) AS t(id bigint);
+    END IF;
     SELECT t.id INTO eval_id FROM dblink(conn, format(
       $f$INSERT INTO vdb.ledger_policy_evaluations (xid, rule_id, action, command_tag, statement_md5, actor, session, blackbox_id)
          VALUES (%s,%L,'block',%L,%L,%L,%L,%s) RETURNING id$f$,
@@ -243,7 +267,7 @@ END $$;
 
 -- Which policy-gate definition is installed.
 CREATE OR REPLACE FUNCTION vdb.blackbox_policy_version() RETURNS text
-LANGUAGE sql IMMUTABLE AS $$ SELECT '1' $$;
+LANGUAGE sql IMMUTABLE AS $$ SELECT '2' $$;  -- 2: rules match the running statement
 GRANT EXECUTE ON FUNCTION vdb.blackbox_policy_version() TO vdbclient;
 
 SET session_replication_role = DEFAULT;

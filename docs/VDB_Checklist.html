@@ -103,7 +103,7 @@
   <div class="meta">
     <b>What this is:</b> every VectoraDB feature and its sub-features — built or not, and how it was tested — so it's clear where we are and what's next.
     How each feature works is in <code>VDB_Feature_Implemented.pdf</code> (same ids).<br>
-    <b>Last updated:</b> 17 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>34f05a1</code> (v0.8.7, console permissions PR #40) + update notice and test isolation (<code>fix/test-isolation</code>)<br>
+    <b>Last updated:</b> 17 September 2026 &nbsp;·&nbsp; <b>Reflects:</b> <code>main</code> @ <code>56432a4</code> (v0.8.7, test isolation PR #41) + Blackbox precision (<code>fix/blackbox-precision</code>)<br>
     <b>Source:</b> <code>docs/VDB_Checklist.html</code> → <code>make feature-doc</code> → this PDF
   </div>
 
@@ -322,16 +322,16 @@
       <li class="todo">Role / database changes, some dropped object types</li></ul></td><td class="tb">VM §8</td></tr>
     <tr data-id="H2" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">H2</td><td><b>Hash chain, append-only &amp; verify</b><ul class="subs">
       <li class="ok">Rows can't be edited or deleted normally</li><li class="ok"><code>vdb ledger verify</code></li>
-      <li class="part">Superuser rewrite caught only via anchors (H10–H12)</li><li class="todo">Cover <code>vdb.policy</code></li></ul></td><td class="tb">VM §8; v2 §0</td></tr>
+      <li class="part">Superuser rewrite caught only via anchors (H10–H12)</li><li class="ok"><code>vdb.policy</code> changes recorded (append-only, not chained)</li></ul></td><td class="tb">VM §8; v2 §0, §6b</td></tr>
     <tr data-id="H3" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">H3</td><td><b>Attribution</b><ul class="subs">
       <li class="ok">Humans via their login role</li><li class="ok">Agents via their own <code>agent-&lt;id&gt;</code> role</li>
       <li class="part">Tool, kind, session client-settable</li></ul></td><td class="tb">VM §8; v2 §1c</td></tr>
-    <tr data-id="H4" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">H4</td><td><b>Destructive-DDL guardrail</b><ul class="subs">
+    <tr data-id="H4" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">H4</td><td><b>Destructive-DDL guardrail</b><ul class="subs">
       <li class="ok">DROP TABLE / DROP SCHEMA refused, attempt recorded</li><li class="ok">Override only superusers / <code>vdb_admin</code>, use recorded</li>
-      <li class="todo">"flag" and "allow" policy actions</li></ul></td><td class="tb">VM §8; v2 §1b</td></tr>
-    <tr data-id="H5" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">H5</td><td><b>Risk flags</b><ul class="subs">
-      <li class="ok">Type change, drop column flagged</li><li class="todo">Per-command matching (not whole query text)</li>
-      <li class="todo">Automated test</li></ul></td><td class="tb">Manual</td></tr>
+      <li class="ok">"flag" and "allow" actions; unknown actions refused</li><li class="ok">No hang when blocked after a write in the same transaction</li></ul></td><td class="tb">VM §8; v2 §1b, §6b</td></tr>
+    <tr data-id="H5" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">H5</td><td><b>Risk flags</b><ul class="subs">
+      <li class="ok">Type change, drop column flagged</li><li class="ok">Judged on the running statement (no comments or literals)</li>
+      <li class="ok">Automated test</li></ul></td><td class="tb">Unit; v2 §6b</td></tr>
     <tr data-id="H6" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">H6</td><td><b>Blackbox access (CLI / REST / MCP / UI / SDK)</b><ul class="subs">
       <li class="ok">CLI, REST with filters, MCP, web page, SDKs</li><li class="todo">Per-user access control</li></ul></td><td class="tb">v2 §0, §5</td></tr>
     <tr data-id="H7" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">H7</td><td><b><code>vdb ledger revert --to</code></b><ul class="subs">
@@ -358,7 +358,7 @@
     <tr data-id="H15" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">H15</td><td><b>Policy gate (warn / block)</b><ul class="subs">
       <li class="ok">VDB02 warn / VDB01 block with JSON detail</li><li class="ok">Blocked attempts recorded</li>
       <li class="ok">Per-rule <code>vdb_admin</code> override</li><li class="ok">CLI, REST, MCP, web page; custom rules</li>
-      <li class="part">Patterns match the whole query text</li><li class="todo">TRUNCATE</li></ul></td><td class="tb">Unit; v2 §6</td></tr>
+      <li class="ok">Patterns match the running statement</li><li class="todo">TRUNCATE</li></ul></td><td class="tb">Unit; v2 §6, §6b</td></tr>
     <tr data-id="H16" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">H16</td><td><b>Agent provenance &amp; execute_change</b><ul class="subs">
       <li class="ok">Session, task, parent session on every agent change (also through the Gateway DSN)</li><li class="ok">MCP <code>execute_change</code> with policy preview</li>
       <li class="ok"><code>vdb blackbox sessions</code>, REST</li><li class="part">Provenance is what the agent says (not verified)</li></ul></td><td class="tb">Unit; v2 §7</td></tr>
@@ -460,7 +460,7 @@
     <tr data-id="L3" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">L3</td><td><b>Dashboard</b><ul class="subs">
       <li class="ok">Live tiles</li><li class="ok">Branch table: create, suspend, resume, delete, copy DSN</li></ul></td><td class="tb">Manual</td></tr>
     <tr data-id="L4" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">L4</td><td><b>SQL console &amp; browser</b><ul class="subs">
-      <li class="ok">Schema sidebar, rows, structure, indexes</li><li class="ok">SQL editor</li><li class="ok">System tables hidden by default, with a show button</li><li class="ok">Runs as the signed-in user; one-run override switch</li></ul></td><td class="tb">Manual; API in v2 §6</td></tr>
+      <li class="ok">Schema sidebar, rows, structure, indexes</li><li class="ok">SQL editor</li><li class="ok">System tables hidden by default, with a show button</li><li class="ok">Runs as the signed-in user; one-run override switch</li><li class="ok">Per-rule override for policy blocks</li></ul></td><td class="tb">Manual; API in v2 §6</td></tr>
     <tr data-id="L5" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">L5</td><td><b>Blackbox page</b><ul class="subs">
       <li class="ok">Entries per branch with badges</li><li class="todo">Table / risk / date filters</li><li class="todo">Verify button, statement and session</li></ul></td><td class="tb">Manual</td></tr>
     <tr data-id="L6" data-st="man"><td class="c"><i class="ck man"></i></td><td class="id">L6</td><td><b>API keys page</b><ul class="subs">

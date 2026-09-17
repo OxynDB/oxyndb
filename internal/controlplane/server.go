@@ -31,6 +31,9 @@ import (
 
 var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,40}$`)
 
+// ruleIDRe matches a Blackbox policy rule id (vdb.policy_rules.rule_id).
+var ruleIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+
 // openapiSpec is the canonical API description, served at GET /api/openapi.yaml
 // so any client generator can consume it.
 //
@@ -187,6 +190,10 @@ func registerAPI(mux *http.ServeMux) {
 			// AllowDestructive applies SET vdb.allow_destructive=on to this one
 			// query. The guardrail still decides whether it counts.
 			AllowDestructive bool `json:"allow_destructive"`
+			// AllowRules applies SET vdb.policy_allow to this one query: the
+			// per-rule override for a Blackbox policy block (VDB01), which
+			// allow_destructive does not cover. Also honoured only for admins.
+			AllowRules []string `json:"allow_rules"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		if strings.TrimSpace(body.SQL) == "" {
@@ -199,7 +206,13 @@ func registerAPI(mux *http.ServeMux) {
 			return
 		}
 		u, _ := auth.UserFrom(r.Context())
-		writeJSON(w, 200, runQuery(addr, body.SQL, queryAs{Branch: name, Actor: u.Email, AllowDestructive: body.AllowDestructive}))
+		for _, id := range body.AllowRules {
+			if !ruleIDRe.MatchString(id) {
+				writeErr(w, 400, fmt.Errorf("allow_rules: %q is not a rule id", id))
+				return
+			}
+		}
+		writeJSON(w, 200, runQuery(addr, body.SQL, queryAs{Branch: name, Actor: u.Email, AllowDestructive: body.AllowDestructive, AllowRules: body.AllowRules}))
 	})
 
 	// Migration: import a source database into a new instance from a connection
@@ -337,6 +350,10 @@ type queryAs struct {
 	// AllowDestructive applies SET vdb.allow_destructive=on to this query's
 	// session. It is honoured only for superusers and members of vdb_admin.
 	AllowDestructive bool
+	// AllowRules applies SET vdb.policy_allow (comma-separated rule ids) to this
+	// query's session: the override for policy rules, which allow_destructive
+	// does not cover. Also honoured only for superusers and vdb_admin members.
+	AllowRules []string
 }
 
 // runQuery executes SQL against a branch backend and returns columns/rows (or an
@@ -381,6 +398,11 @@ func runQuery(addr, sql string, as queryAs) map[string]any {
 	}
 	// Each console run is its own connection, so a SET typed in one run is gone
 	// by the next; the override has to travel with the query it is meant for.
+	if len(as.AllowRules) > 0 {
+		if _, err := conn.Exec(ctx, "SELECT set_config('vdb.policy_allow',$1,false)", strings.Join(as.AllowRules, ",")); err != nil {
+			return map[string]any{"error": err.Error()}
+		}
+	}
 	if as.AllowDestructive {
 		if _, err := conn.Exec(ctx, "SELECT set_config('vdb.allow_destructive','on',false)"); err != nil {
 			return map[string]any{"error": err.Error()}
