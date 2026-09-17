@@ -543,6 +543,99 @@ assert_eq "reinstalling keeps one gate trigger" "$(pg vec-main "SELECT count(*) 
 reset_rules
 pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2pol; DROP TABLE IF EXISTS v2pol_forbidden; DROP TABLE IF EXISTS v2pol_ok" >/dev/null
 
+echo "### 6b. rules and risk flags judge the statement that runs (H5, H15, H4, H2)"
+# Rules and risk flags used to match everything a client sent in one message —
+# comments, string literals and every other statement in it.
+reset_rules
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2stm; DROP TABLE IF EXISTS v2stm_a; DROP TABLE IF EXISTS v2stm_b" >/dev/null
+gw "$KEY" main "CREATE TABLE v2stm(a int, b int, c int, d int, e int)" >/dev/null
+
+read -r -d '' TOK_SQL <<'SQL'
+SELECT string_agg(pos || '=' || body, ' | ' ORDER BY pos) FROM vdb._sql_statements(
+$q$ALTER TABLE t ADD c text DEFAULT 'a;b''drop column'; -- drop column x
+ALTER TABLE "we;ird" DROP COLUMN y /* nested /* drop column */ still */; CREATE FUNCTION f() RETURNS int AS $body$ SELECT 1; -- drop column $body$ LANGUAGE sql; SELECT E'it\'s; drop column', $1, a$b$q$)
+SQL
+read -r -d '' TOK_WANT <<'WANT'
+1=ALTER TABLE t ADD c text DEFAULT '' | 2=ALTER TABLE "we;ird" DROP COLUMN y | 3=CREATE FUNCTION f() RETURNS int AS '' LANGUAGE sql | 4=SELECT E'', $1, a$b
+WANT
+assert_eq "tokenizer: statements split with comments removed and literals emptied" "$(pg vec-main "$TOK_SQL")" "$TOK_WANT"
+read -r -d '' MB_SQL <<'SQL'
+SELECT count(*) FROM vdb._sql_statements('héllo ünïcode; ALTER TABLE t ADD x text DEFAULT ''ü;ß''')
+SQL
+assert_eq "tokenizer: multibyte text" "$(pg vec-main "$MB_SQL")" "2"
+read -r -d '' TAG_SQL <<'SQL'
+SELECT vdb._statement_has_tag('CREATE UNIQUE INDEX CONCURRENTLY i ON t(a)','CREATE INDEX')::text
+    || vdb._statement_has_tag('CREATE OR REPLACE VIEW v AS SELECT 1','CREATE VIEW')::text
+    || vdb._statement_has_tag('ALTER VIEW "table" RENAME TO x','ALTER TABLE')::text
+SQL
+assert_eq "tag matching (modifiers skipped; a quoted \"table\" is not a keyword)" "$(pg vec-main "$TAG_SQL")" "truetruefalse"
+
+EVB="$(pg vec-main "SELECT coalesce(max(id),0) FROM vdb.ledger_policy_evaluations")"
+assert_eq "warn: a string literal mentioning the rule doesn't trigger it" \
+  "$(gwv "$KEY" main "ALTER TABLE v2stm ADD COLUMN note text DEFAULT 'drop column later'" | grep -c 'VDB02')" "0"
+assert_eq "warn: a comment mentioning the rule doesn't trigger it" \
+  "$(gwv "$KEY" main "$(printf -- '-- drop column soon\nALTER TABLE v2stm ADD COLUMN n2 int')" | grep -c 'VDB02')" "0"
+assert_eq "warn: add then drop in one run warns once, for the drop" \
+  "$(gwv "$KEY" main "ALTER TABLE v2stm ADD COLUMN n3 int; ALTER TABLE v2stm DROP COLUMN n3" | grep -c 'VDB02: .*(rule drop-column)')|$(pg vec-main "SELECT count(*) FROM vdb.ledger_policy_evaluations WHERE id > $EVB AND rule_id='drop-column'")" "1|1"
+assert_eq "warn: a comment inside the statement doesn't hide it" \
+  "$(gwv "$KEY" main "ALTER TABLE v2stm DROP /* x */ COLUMN n2" | grep -c 'VDB02: .*(rule drop-column)')" "1"
+assert_eq "risk: a literal mentioning drop column is not flagged" \
+  "$(pg vec-main "SELECT status||'/'||coalesce(risk,'-') FROM vdb.schema_ledger WHERE object_identity='public.v2stm' AND statement LIKE '%note text%' ORDER BY id DESC LIMIT 1")" "APPLIED/-"
+gw "$KEY" main "ALTER TABLE v2stm ADD COLUMN r2 int; ALTER TABLE v2stm DROP COLUMN r2" >/dev/null
+assert_eq "risk: in add-then-drop only the drop is flagged" \
+  "$(pg vec-main "SELECT string_agg(status||'/'||coalesce(risk,'-'), ',' ORDER BY id) FROM (SELECT * FROM vdb.schema_ledger WHERE object_identity='public.v2stm' ORDER BY id DESC LIMIT 2) x")" \
+  "APPLIED/-,FLAGGED/drop-column"
+assert_eq "preview: a literal doesn't match" \
+  "$($S policy check "ALTER TABLE v2stm ADD COLUMN x text DEFAULT 'drop column'" 2>&1 | grep -c 'drop-column')" "0"
+assert_eq "preview: a drop in a multi-statement text matches" \
+  "$($S policy check "ALTER TABLE v2stm ADD COLUMN x int; ALTER TABLE v2stm DROP COLUMN x" 2>&1 | grep -c 'drop-column')" "1"
+
+$S policy block drop-column >/dev/null 2>&1
+assert_eq "block: a harmless statement with the phrase in a literal runs" \
+  "$(gwv "$KEY" main "ALTER TABLE v2stm ADD COLUMN n5 text DEFAULT 'drop column'" | grep -c 'ERROR')|$(pg vec-main "SELECT count(*) FROM information_schema.columns WHERE table_name='v2stm' AND column_name='n5'")" "0|1"
+EVB="$(pg vec-main "SELECT coalesce(max(id),0) FROM vdb.ledger_policy_evaluations")"
+S0=$(date +%s)
+OUT="$(PGPASSWORD="$KEY" timeout 60 psql "$GATEWAY/main" -X -v VERBOSITY=verbose -tAc "ALTER TABLE v2stm ADD COLUMN n4 int; ALTER TABLE v2stm DROP COLUMN e" 2>&1)"
+assert_eq "block: add then drop in one run is refused without hanging (it deadlocked before)" \
+  "$(echo "$OUT" | grep -c 'VDB01: .*(rule drop-column)')|$([ $(( $(date +%s) - S0 )) -lt 30 ] && echo fast)" "1|fast"
+assert_eq "block: …the whole run is rolled back" \
+  "$(pg vec-main "SELECT count(*) FROM information_schema.columns WHERE table_name='v2stm' AND column_name='n4'")" "0"
+assert_eq "block: …the evaluation is still recorded, and the skipped Blackbox entry is announced" \
+  "$(pg vec-main "SELECT count(*) FROM vdb.ledger_policy_evaluations WHERE id > $EVB AND rule_id='drop-column' AND action='block'")|$(echo "$OUT" | grep -c 'not recorded in Blackbox, because this transaction has already written to it')" "1|1"
+assert_eq "block: DDL inside a DO block is still caught" \
+  "$(gwv "$KEY" main 'DO $$ BEGIN ALTER TABLE v2stm DROP COLUMN d; END $$' | grep -c 'VDB01')" "1"
+read -r -d '' BUILT <<'SQL'
+DO $$ BEGIN EXECUTE 'ALTER TABLE v2stm DR' || 'OP COLUMN d'; END $$
+SQL
+assert_eq "block: …including a statement assembled from strings" "$(gwv "$KEY" main "$BUILT" | grep -c 'VDB01')" "1"
+assert_eq "a client can't move the statement position" \
+  "$(gw "$KEY" main "SELECT vdb._statement_texts('start','ALTER TABLE','')" | grep -c 'permission denied')|$(gw "$KEY" main "UPDATE vdb.statement_cursor SET pos = 99" | grep -c 'permission denied')" "1|1"
+reset_rules
+
+S0=$(date +%s)
+OUT="$(PGPASSWORD="$KEY" timeout 60 psql "$GATEWAY/main" -X -v VERBOSITY=verbose -tAc "BEGIN; CREATE TABLE v2stm_a(x int); DROP TABLE v2stm; COMMIT;" 2>&1)"
+assert_eq "guardrail: a blocked DROP TABLE after a write in the same transaction no longer hangs, error unchanged" \
+  "$(echo "$OUT" | grep -c '42501: VectoraDB guardrail: DROP TABLE is blocked by policy (set vdb.allow_destructive=on to override)')|$([ $(( $(date +%s) - S0 )) -lt 30 ] && echo fast)" "1|fast"
+assert_eq "no session left waiting" \
+  "$(pg vec-main "SELECT count(*) FROM pg_stat_activity WHERE datname='vectoradb' AND wait_event_type IN ('Lock','Extension') AND pid <> pg_backend_pid()")" "0"
+
+HB="$(pg vec-main "SELECT coalesce(max(id),0) FROM vdb.policy_history")"
+pg vec-main "SET vdb.actor = 'v2-audit'; INSERT INTO vdb.policy VALUES ('DROP INDEX','flag') ON CONFLICT (op) DO UPDATE SET action = 'flag'" >/dev/null
+gw "$KEY" main "CREATE INDEX v2stm_a_idx ON v2stm(a)" >/dev/null
+gw "$KEY" main "DROP INDEX v2stm_a_idx" >/dev/null
+assert_eq "flag: a flagged command runs and is recorded FLAGGED" \
+  "$(pg vec-main "SELECT status||'/'||risk FROM vdb.schema_ledger WHERE command_tag='DROP INDEX' AND object_identity='public.v2stm_a_idx' ORDER BY id DESC LIMIT 1")|$(pg vec-main "SELECT to_regclass('public.v2stm_a_idx') IS NULL")" \
+  "FLAGGED/drop|t"
+assert_eq "an unknown guardrail action is refused" \
+  "$(pgerr vec-main "UPDATE vdb.policy SET action = 'blok' WHERE op = 'DROP INDEX'" | grep -c 'policy_action_valid')" "1"
+pg vec-main "SET vdb.actor = 'v2-audit'; DELETE FROM vdb.policy WHERE op = 'DROP INDEX'" >/dev/null
+assert_eq "guardrail policy changes are recorded, with who made them" \
+  "$(pg vec-main "SELECT string_agg(change||':'||coalesce(old_action,'-')||'>'||coalesce(new_action,'-')||':'||changed_by, ',' ORDER BY id) FROM vdb.policy_history WHERE id > $HB")" \
+  "insert:->flag:v2-audit,delete:flag>-:v2-audit"
+assert_eq "…the history is append-only and readable by clients" \
+  "$(pgerr vec-main "DELETE FROM vdb.policy_history" | grep -c 'append-only')|$(gw "$KEY" main "SELECT count(*) > 0 FROM vdb.policy_history")" "1|t"
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2stm; DROP TABLE IF EXISTS v2stm_a; DROP TABLE IF EXISTS v2stm_b" >/dev/null
+
 echo "### 7. agent provenance (sessions, tasks, execute_change)"
 # mcp_exec <arguments-json>: one MCP process that introduces itself as v2test-agent
 # and calls execute_change; prints the tool's text result.
