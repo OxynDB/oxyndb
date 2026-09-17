@@ -263,6 +263,18 @@ func registerAPI(mux *http.ServeMux) {
 		send("done", map[string]any{"status": status, "target": target, "tables": branch.TableCount(target)})
 	})
 
+	// Base backups in object storage: what a point-in-time restore can start
+	// from. Read-only -- a restore itself is `vdb restore --to`, which needs a
+	// port on the host and leaves a disposable container behind.
+	mux.HandleFunc("GET /api/backups", func(w http.ResponseWriter, r *http.Request) {
+		list, err := branch.Backups()
+		if err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, 200, list)
+	})
+
 	// Continuous imports (logical replication into a branch): where each stands,
 	// and the cutover that turns one into a standalone branch.
 	mux.HandleFunc("GET /api/replication", func(w http.ResponseWriter, r *http.Request) {

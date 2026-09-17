@@ -92,6 +92,12 @@ export const verifyLedger = async (name: string): Promise<LedgerVerify> => {
   return { legacy: Number(at('legacy') ?? 0), chained: Number(at('chained') ?? 0), broken: Number(at('broken') ?? 0), firstBroken: String(at('first_broken') ?? '') }
 }
 
+// Base backups in object storage: what a point-in-time restore can start from.
+export type Backup = {
+  name: string; started_at?: string; finished_at: string; size_bytes?: number; newest?: boolean
+}
+export const listBackups = () => req('GET', `${API}/api/backups`) as Promise<Backup[]>
+
 // Continuous imports (logical replication into a branch).
 export type Replication = {
   branch: string; replicating: boolean; tables: number; tables_ready: number

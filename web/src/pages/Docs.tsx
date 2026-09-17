@@ -70,6 +70,7 @@ export default function Docs() {
           <tr><td><code>POST /api/branches/{'{name}'}/impact</code></td><td>What a change would affect, before running it</td></tr>
           <tr><td><code>GET /api/ledger/diff</code> · <code>GET /api/blackbox/diff</code></td><td>Schema changes distinguishing two branches (<code>?a=&amp;b=</code>)</td></tr>
           <tr><td><code>POST /api/import</code> · <code>POST /api/import/file</code></td><td>Migrate from a connection string ({'{ "source", "target", "continuous" }'}) or an upload</td></tr>
+          <tr><td><code>GET /api/backups</code></td><td>Base backups in object storage, newest first — the oldest is the earliest point <code>vdb restore --to</code> can reach</td></tr>
           <tr><td><code>GET /api/replication</code> · <code>GET /api/branches/{'{name}'}/replication</code> · <code>POST …/replication/cutover</code></td><td>Continuous imports: how far each has copied, and the cutover that makes the branch standalone</td></tr>
           <tr><td><code>GET|POST /api/pipelines</code> · <code>GET|PUT|DELETE …/{'{id}'}</code> · <code>…/runs</code> · <code>…/run</code></td><td>ETL pipelines and their run history</td></tr>
           <tr><td><code>GET|POST /api/keys</code> · <code>DELETE /api/keys/{'{id}'}</code></td><td>API keys</td></tr>
