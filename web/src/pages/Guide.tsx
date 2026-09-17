@@ -186,7 +186,7 @@ curl -H "Authorization: Bearer $VDB_KEY" -X DELETE https://localhost:8088/agents
       <p className="muted">The agent API serves TLS with a self-signed certificate, so add <code>-k</code> to curl
         (or trust the certificate). Agent frameworks can skip HTTP entirely and speak{' '}
         <a href="https://github.com/vectoradb/vectoraDB/blob/main/docs/mcp.md" target="_blank" rel="noreferrer">MCP</a>{' '}
-        instead: <code>vdb mcp</code>.</p>
+        instead: <code>vdb mcp</code>, which takes an API key of its own (<code>VECTORADB_API_KEY</code>) and acts as that account.</p>
 
       <h2>Quick reference</h2>
       <table>

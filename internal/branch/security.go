@@ -56,12 +56,25 @@ END $do$;`, quoteLiteral(role), quoteLiteral(password))
 // is attributed to tool as an agent; agent branches keep their per-database agent
 // attribution (set when the branch was created).
 func ClientQueryText(branchName, sql, tool string) (string, error) {
+	return ClientQueryTextAs(branchName, sql, tool, tool)
+}
+
+// ClientQueryTextAs is ClientQueryText with the Blackbox actor given
+// separately from the tool. The MCP server passes the account its API key
+// belongs to, so its changes name a person rather than just "mcp"; tool still
+// says how they arrived. An empty actor falls back to the tool, as before.
+func ClientQueryTextAs(branchName, sql, tool, actor string) (string, error) {
 	if branchName == "" {
 		branchName = "main"
 	}
+	if actor == "" {
+		actor = tool
+	}
 	args := []string{"docker", "exec", "-e", "PGAPPNAME=" + tool}
 	if !strings.HasPrefix(branchName, "agent-") {
-		args = append(args, "-e", fmt.Sprintf("PGOPTIONS=-c vdb.actor=%s -c vdb.actor_kind=agent", tool))
+		// An agent branch carries its actor and session as database defaults
+		// (sessionDefaultsSQL), so injecting here would override them.
+		args = append(args, "-e", fmt.Sprintf("PGOPTIONS=-c vdb.actor=%s -c vdb.actor_kind=agent", actor))
 	}
 	args = append(args, container(branchName),
 		"psql", "-U", "vdbclient", "-d", pgDatabase, "-P", "pager=off", "-c", sql)

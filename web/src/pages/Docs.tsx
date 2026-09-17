@@ -86,7 +86,7 @@ export default function Docs() {
       <table>
         <thead><tr><th>Client config</th><th>Notes</th></tr></thead>
         <tbody>
-          <tr><td><code>{'{ "command": "vdb", "args": ["mcp"] }'}</code></td><td>Needs <code>vdb start</code> running; no auth of its own</td></tr>
+          <tr><td><code>{'{ "command": "vdb", "args": ["mcp"], "env": { "VECTORADB_API_KEY": "vdb_…" } }'}</code></td><td>Needs <code>vdb start</code> running and an API key — the server acts as that account; a branch-scoped key limits it to one branch</td></tr>
         </tbody>
       </table>
 

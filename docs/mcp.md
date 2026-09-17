@@ -21,15 +21,34 @@ Most clients take a command and arguments. The command is `vdb`, the argument is
   "mcpServers": {
     "vectoradb": {
       "command": "vdb",
-      "args": ["mcp"]
+      "args": ["mcp"],
+      "env": { "VECTORADB_API_KEY": "vdb_…" }
     }
   }
 }
 ```
 
-That is the whole configuration. `vdb` must be on the client's `PATH` (the
-installer puts it there) and VectoraDB must be running — `vdb start` — because
-the tools talk to the same engine the CLI does.
+`vdb` must be on the client's `PATH` (the installer puts it there) and
+VectoraDB must be running — `vdb start` — because the tools talk to the same
+engine the CLI does.
+
+The key is required: these tools create databases, run SQL and branch `main`,
+and every change is recorded against the account the key belongs to. Make one
+with
+
+```
+vdb apikey create you@example.com mcp
+```
+
+and put it in the `env` block above (`--key <vdb_…>` also works, but a key on
+the command line is visible in the process list). Started without one, the
+server prints these instructions and exits rather than serving unauthenticated.
+
+A key **scoped to one branch** — the kind the Agent Branch API issues — limits
+the server to that branch: every tool call is pinned to it, naming another
+branch is refused, and `create_branch`, `delete_branch`, `list_branches`,
+`blackbox_diff` and `branch_before_change` are refused outright, since each
+reaches past a single branch. An account key behaves as it always did.
 
 On macOS and Windows the engine runs inside a VM or WSL distro, and `vdb mcp`
 forwards into it automatically, so the config above is identical on every
@@ -91,9 +110,12 @@ and it does not return the policy verdict.
 
 ## What it does not do
 
-- **No authentication.** The MCP server trusts whoever can run the process, the
-  same as the `vdb` CLI. It is meant for a local agent runtime, not for exposing
-  a database to the network.
+- **The key is the only credential.** The server verifies an API key and acts
+  as that account for the life of the process; there is no per-call
+  authorization beyond a scoped key's one branch, and no rate limiting. It is
+  still meant for a local agent runtime: anyone who can read the client config
+  can read the key, and the process itself runs with the privileges of the user
+  who started it.
 - **No superuser by default.** `run_sql` connects as the non-superuser
   `vdbclient` role, so an agent cannot disable triggers or override the
   destructive-DDL guardrail. `VECTORADB_MCP_SUPERUSER=1` restores the old

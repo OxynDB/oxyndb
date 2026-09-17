@@ -164,7 +164,13 @@ export default function Ledger() {
       <div className="table-wrap" style={{ marginTop: 14 }}>
         <table>
           <thead>
-            <tr><th>Time</th><th>Actor</th><th>Tool</th><th>Change</th><th>Status</th></tr>
+            <tr>
+              <th>Time</th>
+              <th title="Who made the change: the login role the database saw, which a client cannot change">Actor</th>
+              <th title="What the client called itself (application_name) — declared by the client, not verified">Tool <span className="lg-declared">declared</span></th>
+              <th>Change</th>
+              <th>Status</th>
+            </tr>
           </thead>
           <tbody>
             {rows.length === 0 && !busy
@@ -190,7 +196,10 @@ export default function Ledger() {
                   <tr className="lg-detail">
                     <td colSpan={5}>
                       <div className="lg-meta">
-                        <span><span className="muted">session</span> <code>{r.session || '—'}</code></span>
+                        <span title="Declared by the client (vdb.session), not verified">
+                          <span className="muted">session</span> <code>{r.session || '—'}</code>
+                          <span className="lg-declared">declared</span>
+                        </span>
                         <span><span className="muted">branch</span> <code>{r.branch || branch}</code></span>
                       </div>
                       <pre className="lg-statement">{r.statement || '(no statement recorded)'}</pre>

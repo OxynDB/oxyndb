@@ -26,14 +26,44 @@ assert_eq() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (got '$2', want '$3
 pg() { local c="$1"; shift; sudo docker exec "$c" psql -U vectoradb -d vectoradb -tAc "$*" 2>/dev/null; }
 # gw <key> <branch> <sql>  -> psql through the gateway, stderr included
 gw() { PGPASSWORD="$1" psql "$GATEWAY/$2" -tAc "$3" 2>&1; }
+# main_ready: wait until main really is serving. Deliberately over TCP
+# (-h localhost), not the Unix socket: on a container's first start the Postgres
+# entrypoint runs initdb against a temporary server that listens on the socket
+# only, so a socket probe reports ready while the real cluster does not exist
+# yet -- the same trap internal/branch.waitReady documents.
+main_ready() {
+  local i
+  for i in $(seq 1 60); do
+    [ "$(sudo docker exec -e PGPASSWORD=vectoradb vec-main psql -h localhost -U vectoradb -d vectoradb -tAc 'SELECT 1' 2>/dev/null)" = "1" ] && return 0
+    sleep 1
+  done
+  echo "  (main did not become ready)" >&2
+  return 1
+}
+
+# count_main <sql>: a count from main, waiting for a numeric answer. A restart
+# can leave the first query unanswered, and an empty string compared with -gt
+# is a shell error, not a failed assertion.
+count_main() {
+  local i n
+  for i in $(seq 1 30); do
+    n="$(pg vec-main "$1")"
+    case "$n" in '' | *[!0-9]*) sleep 2 ;; *) echo "$n"; return 0 ;; esac
+  done
+  echo ""
+  return 1
+}
+
 jget() { python3 -c 'import sys,json; print(json.load(sys.stdin)[sys.argv[1]])' "$1"; }
 jcols() { python3 -c 'import sys,json; print(",".join(json.load(sys.stdin)["columns"]))'; }
 # mcp_call <tool> <json-args> [env...]  -> the tool's text result
+# The MCP server acts as an API key's account (K6), so every call carries one;
+# pass VECTORADB_API_KEY=... in the env arguments to use a different key.
 mcp_call() {
   local tool="$1" args="$2"; shift 2
   printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
     "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"$tool\",\"arguments\":$args}}" \
-    | env "$@" "$S" mcp 2>/dev/null \
+    | env VECTORADB_API_KEY="$KEY" "$@" "$S" mcp 2>/dev/null \
     | python3 -c 'import sys,json
 for line in sys.stdin:
     m=json.loads(line)
@@ -42,7 +72,7 @@ for line in sys.stdin:
 
 echo "### setup"
 $S stop >/dev/null 2>&1; sleep 1
-$S start >/dev/null 2>&1; sleep 5
+$S start >/dev/null 2>&1; sleep 5; main_ready
 USER_EMAIL="v2test@vectoradb.dev"
 printf 'password123\n' | $S user create "$USER_EMAIL" >/dev/null 2>&1 || true
 KEY="$($S apikey create "$USER_EMAIL" v2 2>/dev/null | grep -o 'vdb_[A-Za-z0-9_-]*')"
@@ -131,6 +161,37 @@ assert_eq "MCP run_sql cannot disable triggers" \
   "$(mcp_call run_sql '{"sql":"SET session_replication_role=replica"}' | grep -c 'permission denied')" "1"
 assert_eq "VECTORADB_MCP_SUPERUSER=1 restores the old role" \
   "$(mcp_call run_sql '{"sql":"SELECT session_user"}' VECTORADB_MCP_SUPERUSER=1 | grep -c 'vectoradb')" "1"
+# K6: the MCP server acts as an API key's account, and refuses to run without one.
+assert_eq "vdb mcp without a key exits non-zero" \
+  "$(printf '' | $S mcp >/dev/null 2>/tmp/mcpnokey.log; echo $?)" "1"
+assert_eq "…and says how to make one" "$(grep -c 'vdb apikey create' /tmp/mcpnokey.log)" "1"
+assert_eq "…and names the environment variable a client config sets" "$(grep -c 'VECTORADB_API_KEY' /tmp/mcpnokey.log)" "1"
+assert_eq "vdb mcp with an invalid key refuses to run" \
+  "$(printf '' | VECTORADB_API_KEY=vdb_notarealkey $S mcp >/dev/null 2>&1; echo $?)|$(printf '' | VECTORADB_API_KEY=vdb_notarealkey $S mcp 2>&1 >/dev/null | grep -c 'not valid')" "1|1"
+# On its own branch: §5b counts main's entries, and these checks would add to them.
+$S branch create v2h3 >/dev/null 2>&1
+assert_eq "MCP run_sql records the key's account as the actor" \
+  "$(mcp_call run_sql '{"branch":"v2h3","sql":"CREATE TABLE h3mcp(x int)"}' >/dev/null; pg vec-v2h3 "SELECT DISTINCT actor||'/'||actor_kind FROM vdb.schema_ledger WHERE object_identity='public.h3mcp'")" "$USER_EMAIL/agent"
+# A branch-scoped key (an agent's) reaches its own branch and nothing else.
+# With no branch argument a tool would default to main; a scoped key's call
+# must land in its own branch instead.
+mcp_call run_sql '{"sql":"CREATE TABLE h3scoped(x int)"}' VECTORADB_API_KEY="$AKEY" >/dev/null
+assert_eq "a scoped key's MCP call lands in its own branch, not main" \
+  "$(pg vec-agent-v2itest "SELECT to_regclass('public.h3scoped') IS NOT NULL")|$(pg vec-main "SELECT to_regclass('public.h3scoped') IS NULL")" "t|t"
+assert_eq "…naming another branch is refused" \
+  "$(mcp_call run_sql '{"branch":"main","sql":"SELECT 1"}' VECTORADB_API_KEY="$AKEY" | grep -c 'limited to branch')" "1"
+assert_eq "…and so are the tools that reach past one branch" \
+  "$(mcp_call list_branches '{}' VECTORADB_API_KEY="$AKEY" | grep -c 'limited to branch')|$(mcp_call create_branch '{"agent_id":"other"}' VECTORADB_API_KEY="$AKEY" | grep -c 'limited to branch')" "1|1"
+
+# H3: actor_kind follows the role, so a client cannot record itself as the other
+# kind. vdb.actor_kind is an ordinary session setting, and used to be believed.
+PGPASSWORD="$KEY" psql "$GATEWAY/v2h3" -q -c "SET vdb.actor_kind='agent'; CREATE TABLE h3human(x int);" >/dev/null 2>&1
+assert_eq "a human claiming to be an agent is still recorded as human" \
+  "$(pg vec-v2h3 "SELECT DISTINCT actor||'/'||actor_kind FROM vdb.schema_ledger WHERE object_identity='public.h3human'")" "$USER_EMAIL/human"
+psql "$DSN" -q -c "SET vdb.actor_kind='human'; CREATE TABLE h3agent(x int);" >/dev/null 2>&1
+assert_eq "an agent claiming to be human is still recorded as an agent" \
+  "$(pg vec-agent-v2itest "SELECT DISTINCT actor||'/'||actor_kind FROM vdb.schema_ledger WHERE object_identity='public.h3agent'")" "agent-v2itest/agent"
+$S branch delete v2h3 >/dev/null 2>&1
 curl -sk -H "$AUTH" -X DELETE "$AGENTS/agents/v2itest/branch" >/dev/null 2>&1
 
 echo "### 2. ledger 2.0 capture (xid, LSN, provenance, override use)"
@@ -260,19 +321,21 @@ $S branch delete v2int >/dev/null 2>&1; rm -rf "$ANCH/v2int" /tmp/v2int.jsonl
 
 echo "### 3b. scheduled checkpoints"
 $S stop >/dev/null 2>&1; sleep 1
-VECTORADB_CHECKPOINT_INTERVAL=15s $S start >/dev/null 2>&1; sleep 5
-BEFORE="$(pg vec-main "SELECT count(*) FROM vdb.ledger_checkpoints")"
+VECTORADB_CHECKPOINT_INTERVAL=15s $S start >/dev/null 2>&1; main_ready
+BEFORE="$(count_main "SELECT count(*) FROM vdb.ledger_checkpoints")"
 pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2sched" >/dev/null
 gw "$KEY" main "CREATE TABLE v2sched(x int)" >/dev/null
+AFTER="$BEFORE"
 for i in $(seq 1 12); do
-  [ "$(pg vec-main "SELECT count(*) FROM vdb.ledger_checkpoints")" -gt "$BEFORE" ] && break
+  AFTER="$(count_main "SELECT count(*) FROM vdb.ledger_checkpoints")"
+  [ -n "$BEFORE" ] && [ -n "$AFTER" ] && [ "$AFTER" -gt "$BEFORE" ] && break
   sleep 5
 done
 assert_eq "the scheduler anchors new entries on its own" \
-  "$([ "$(pg vec-main "SELECT count(*) FROM vdb.ledger_checkpoints")" -gt "$BEFORE" ] && echo yes)" "yes"
+  "$([ -n "$BEFORE" ] && [ -n "$AFTER" ] && [ "$AFTER" -gt "$BEFORE" ] && echo yes)" "yes"
 pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2sched; DROP TABLE IF EXISTS v2cp" >/dev/null
 $S stop >/dev/null 2>&1; sleep 1
-$S start >/dev/null 2>&1; sleep 5
+$S start >/dev/null 2>&1; sleep 5; main_ready
 
 echo "### 4. branch from just before a ledger entry"
 # Three full restores (CLI by xid, MCP by time, REST) — expect a few minutes.
@@ -336,7 +399,7 @@ assert_eq "REST: BLOCKED entry is 400" \
 assert_eq "REST: existing name is 409" \
   "$(curl -sk -o /dev/null -w '%{http_code}' -X POST -H "$AUTH" -d '{"name":"v2bb"}' "$API/api/branches/main/ledger/$TID/branch")" "409"
 assert_eq "MCP lists branch_before_change" \
-  "$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | "$S" mcp 2>/dev/null | grep -c 'branch_before_change')" "1"
+  "$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | env VECTORADB_API_KEY="$KEY" "$S" mcp 2>/dev/null | grep -c 'branch_before_change')" "1"
 assert_eq "MCP: BLOCKED entry is refused" "$(mcp_call branch_before_change "{\"entry_id\":$BID,\"name\":\"v2bb-x\"}" | grep -c 'BLOCKED')" "1"
 
 assert_eq "REST branch-before creates the branch" \
@@ -369,7 +432,7 @@ assert_eq "REST /blackbox/entries answers" \
 assert_eq "REST /blackbox routes require auth like the originals" \
   "$(curl -sk -o /dev/null -w '%{http_code}' "$API/api/branches/main/blackbox/verify")" "401"
 assert_eq "MCP lists both the Blackbox and the original tool names" \
-  "$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | "$S" mcp 2>/dev/null | python3 -c 'import sys,json; n={t["name"] for t in json.load(sys.stdin)["result"]["tools"]}; print(all(x in n for x in ["verify_blackbox","blackbox_integrity","blackbox_entries","verify_ledger","ledger_integrity","ledger_entries"]))')" "True"
+  "$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | env VECTORADB_API_KEY="$KEY" "$S" mcp 2>/dev/null | python3 -c 'import sys,json; n={t["name"] for t in json.load(sys.stdin)["result"]["tools"]}; print(all(x in n for x in ["verify_blackbox","blackbox_integrity","blackbox_entries","verify_ledger","ledger_integrity","ledger_entries"]))')" "True"
 assert_eq "MCP blackbox_integrity matches ledger_integrity" \
   "$(mcp_call blackbox_integrity '{"branch":"main"}' | head -1 | grep -o 'INTACT\|TAMPERED')" "$(mcp_call ledger_integrity '{"branch":"main"}' | head -1 | grep -o 'INTACT\|TAMPERED')"
 assert_eq "MCP verify_blackbox matches verify_ledger" \
@@ -673,7 +736,7 @@ echo "### 7. agent provenance (sessions, tasks, execute_change)"
 mcp_exec() {
   printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"v2test-agent","version":"1"}}}' \
     "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"execute_change\",\"arguments\":$1}}" \
-    | "$S" mcp 2>/dev/null \
+    | env VECTORADB_API_KEY="$KEY" "$S" mcp 2>/dev/null \
     | python3 -c 'import sys,json
 for line in sys.stdin:
     m=json.loads(line)

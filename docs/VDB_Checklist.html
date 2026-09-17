@@ -325,9 +325,10 @@
     <tr data-id="H2" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">H2</td><td><b>Hash chain, append-only &amp; verify</b><ul class="subs">
       <li class="ok">Rows can't be edited or deleted normally</li><li class="ok"><code>vdb ledger verify</code></li>
       <li class="part">Superuser rewrite caught only via anchors (H10–H12)</li><li class="ok"><code>vdb.policy</code> changes recorded (append-only, not chained)</li></ul></td><td class="tb">VM §8; v2 §0, §6b</td></tr>
-    <tr data-id="H3" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">H3</td><td><b>Attribution</b><ul class="subs">
+    <tr data-id="H3" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">H3</td><td><b>Attribution</b><ul class="subs">
       <li class="ok">Humans via their login role</li><li class="ok">Agents via their own <code>agent-&lt;id&gt;</code> role</li>
-      <li class="part">Tool, kind, session client-settable</li></ul></td><td class="tb">VM §8; v2 §1c</td></tr>
+      <li class="ok">Kind derived from the role, so neither can pose as the other</li>
+      <li class="ok">Tool and session are client-declared by design, and labelled so</li></ul></td><td class="tb">Unit; VM §8; v2 §1c</td></tr>
     <tr data-id="H4" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">H4</td><td><b>Destructive-DDL guardrail</b><ul class="subs">
       <li class="ok">DROP TABLE / DROP SCHEMA refused, attempt recorded</li><li class="ok">Override only superusers / <code>vdb_admin</code>, use recorded</li>
       <li class="ok">"flag" and "allow" actions; unknown actions refused</li><li class="ok">No hang when blocked after a write in the same transaction</li></ul></td><td class="tb">VM §8; v2 §1b, §6b</td></tr>
@@ -445,9 +446,10 @@
     <tr data-id="K5" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">K5</td><td><b>Agent Branch API</b><ul class="subs">
       <li class="ok">A branch per agent, own non-superuser role</li><li class="ok">Provenance (task, parent, session)</li>
       <li class="ok">DSN reachable from the host (gateway-routed, branch-scoped key)</li><li class="ok">Cap, listing and TTL count suspended branches</li></ul></td><td class="tb">Unit; VM §5; v2 §1c, §7</td></tr>
-    <tr data-id="K6" data-st="part"><td class="c"><i class="ck part"></i></td><td class="id">K6</td><td><b>MCP server</b><ul class="subs">
+    <tr data-id="K6" data-st="done"><td class="c"><i class="ck done"></i></td><td class="id">K6</td><td><b>MCP server</b><ul class="subs">
       <li class="ok">Branches, run_sql, Blackbox tools</li><li class="ok">policy_check, execute_change, impact, diff</li>
-      <li class="todo">Authentication</li><li class="ok">Client config &amp; 16-tool reference (docs/mcp.md)</li></ul></td><td class="tb">Unit; v2 §1c–§8</td></tr>
+      <li class="ok">Requires an API key and acts as that account; a scoped key is held to its branch</li>
+      <li class="ok">Client config &amp; 16-tool reference (docs/mcp.md)</li></ul></td><td class="tb">Unit; v2 §1c–§8</td></tr>
   </table>
 </section>
 

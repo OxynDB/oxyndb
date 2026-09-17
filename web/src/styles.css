@@ -552,3 +552,11 @@ th.expand-col, td.expand-col { width: 34px; padding-left: 8px; padding-right: 0;
 .lg-meta { display: flex; flex-wrap: wrap; gap: 18px; font-size: 12.5px; margin-bottom: 8px; }
 .lg-statement { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono); font-size: 12.5px;
   color: #cbd5f5; max-height: 260px; overflow: auto; } /* the code colour pre code uses */
+
+/* Blackbox: marks a field the client declares (tool, session) apart from the
+   ones the database attributes (actor, kind), which a client cannot forge. */
+.lg-declared {
+  margin-left: 5px; padding: 1px 5px; border-radius: 6px;
+  font-size: 10px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase;
+  color: var(--muted); border: 1px solid var(--border);
+}
