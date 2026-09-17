@@ -72,9 +72,14 @@ export const suspendBranch = (name: string) => req('POST', `${API}/api/branches/
 export const resumeBranch = (name: string) => req('POST', `${API}/api/branches/${name}/resume`)
 // allowDestructive applies SET vdb.allow_destructive=on to this one run. The
 // query runs as the signed-in user, so it counts only for admins of the branch.
-export const runQuery = (name: string, sql: string, opts: { allowDestructive?: boolean } = {}) =>
-  req('POST', `${API}/api/branches/${name}/query`,
-    opts.allowDestructive ? { sql, allow_destructive: true } : { sql }) as Promise<QueryResult>
+// allowRules applies SET vdb.policy_allow: the per-rule override for a Blackbox
+// policy block (VDB01), which allowDestructive does not cover.
+export const runQuery = (name: string, sql: string, opts: { allowDestructive?: boolean; allowRules?: string[] } = {}) =>
+  req('POST', `${API}/api/branches/${name}/query`, {
+    sql,
+    ...(opts.allowDestructive ? { allow_destructive: true } : {}),
+    ...(opts.allowRules?.length ? { allow_rules: opts.allowRules } : {}),
+  }) as Promise<QueryResult>
 export const getLedger = (name: string, filters: Record<string, string> = {}) => {
   const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v)).toString()
   return req('GET', `${API}/api/branches/${name}/ledger${qs ? '?' + qs : ''}`) as Promise<QueryResult>

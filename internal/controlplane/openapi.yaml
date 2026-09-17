@@ -141,6 +141,13 @@ paths:
                     when the signed-in user is in vdb_admin on the branch (see
                     /admins); anyone else stays blocked. The query runs as the
                     signed-in user's own role.
+                allow_rules:
+                  type: array
+                  items: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,62}$" }
+                  description: >-
+                    Apply SET vdb.policy_allow to this query: the per-rule override
+                    for a Blackbox policy block (VDB01), which allow_destructive
+                    does not cover. Counts only for vdb_admin members.
       responses:
         "200":
           description: Columns and rows, or an error message.

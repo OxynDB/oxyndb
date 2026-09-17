@@ -485,7 +485,22 @@ assert_eq "REST: granting an account that doesn't exist is 404" \
   "$(curl -sk -o /dev/null -w '%{http_code}' -X POST -H "$AUTH" -d '{"email":"nobody@vectoradb.dev"}' "$API/api/branches/main/admins")" "404"
 assert_eq "REST: revoking someone who isn't an admin is 404" \
   "$(curl -sk -o /dev/null -w '%{http_code}' -X DELETE -H "$AUTH" "$API/api/branches/main/admins/nobody@vectoradb.dev")" "404"
+# A policy rule (VDB01) is overridden per rule, not by allow_destructive; the
+# console's "Allow & run again" used to send the wrong one for a rule.
+cqr() { local sql="$1"; shift; curl -sk -X POST -H "$AUTH" -H 'Content-Type: application/json' "$API/api/branches/main/query" \
+  -d "$(python3 -c 'import json,sys; print(json.dumps({"sql": sys.argv[1], "allow_rules": sys.argv[2:]}))' "$sql" "$@")"; }
+$S policy block drop-column >/dev/null 2>&1
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2console2" >/dev/null
+cq "CREATE TABLE v2console2(a int, b int, c int)" >/dev/null
+assert_eq "console: allow_destructive does not override a policy rule" "$(cq 'ALTER TABLE v2console2 DROP COLUMN b' 1 | grep -c 'VDB01')" "1"
+assert_eq "console: allow_rules overrides that rule for an admin" \
+  "$(cqr 'ALTER TABLE v2console2 DROP COLUMN b' drop-column | grep -c '"error"')|$(pg vec-main "SELECT count(*) FROM information_schema.columns WHERE table_name='v2console2' AND column_name='b'")" "0|0"
+assert_eq "console: a malformed rule id is refused (400)" \
+  "$(curl -sk -o /dev/null -w '%{http_code}' -X POST -H "$AUTH" -H 'Content-Type: application/json' -d '{"sql":"SELECT 1","allow_rules":["DROP; x"]}' "$API/api/branches/main/query")" "400"
 $S admin revoke "$USER_EMAIL" --branch main >/dev/null 2>&1
+assert_eq "console: allow_rules is ignored for a non-admin" "$(cqr 'ALTER TABLE v2console2 DROP COLUMN c' drop-column | grep -c 'VDB01')" "1"
+$S policy warn drop-column >/dev/null 2>&1
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2console2" >/dev/null
 assert_eq "REST: check previews matches without running" \
   "$(curl -sk -X POST -H "$AUTH" -d '{"sql":"ALTER TABLE v2pol DROP COLUMN b"}' "$API/api/branches/main/policies/check" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["command"], ",".join(m["rule_id"] for m in d["matches"]))')" \
   "ALTER TABLE drop-column"

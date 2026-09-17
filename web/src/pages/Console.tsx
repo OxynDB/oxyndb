@@ -25,8 +25,12 @@ const isSystem = (o: DbObject) => o.schema === 'vdb' || o.schema.startsWith('vdb
 // Statements that can add, remove or rename tables, so the schema list is
 // refreshed after they run.
 const DDL = /\b(create|drop|alter|truncate|rename|import\s+foreign)\b/i
-// The guardrail's refusal (docs/policy-errors.md).
-const BLOCKED = /blocked by policy|VDB01/i
+// Two different refusals, overridden differently (docs/policy-errors.md): the
+// guardrail on DROP TABLE / DROP SCHEMA (vdb.allow_destructive) and a Blackbox
+// policy rule, SQLSTATE VDB01 (vdb.policy_allow, per rule).
+const GUARDRAIL = /VectoraDB guardrail: .* is blocked by policy/
+const POLICY_RULE = /VDB01/
+const ruleOf = (err: string) => /\(rule ([a-z0-9][a-z0-9-]*)\)/.exec(err)?.[1]
 
 export default function Console() {
   const [branches, setBranches] = useState<Branch[]>([])
@@ -130,10 +134,10 @@ export default function Console() {
 
   // The override applies to one run and then switches itself off, so a later
   // run can't drop something by accident.
-  const runSql = async (override = allowDestructive) => {
+  const runSql = async (override: { allowDestructive?: boolean; allowRules?: string[] } = { allowDestructive }) => {
     setBusy(true); setQueryRes(null); setMode('query')
     try {
-      const r = await runQuery(branch, sql, { allowDestructive: override })
+      const r = await runQuery(branch, sql, override)
       setQueryRes(r)
       if (!r.error && DDL.test(sql)) loadObjects(branch)
     } catch (e) {
@@ -160,7 +164,10 @@ export default function Console() {
   const system = objects.filter(o => isSystem(o) && match(o))
   const label = (o: DbObject) => (o.schema === 'public' ? o.name : o.schema + '.' + o.name)
   const canOverride = admins?.you_are_admin === true
-  const blocked = !!queryRes?.error && BLOCKED.test(queryRes.error)
+  const err = queryRes?.error || ''
+  // A policy-rule block names its rule; without a rule id there's nothing to override.
+  const blockedRule = POLICY_RULE.test(err) ? ruleOf(err) : undefined
+  const blocked = GUARDRAIL.test(err) || !!blockedRule
   const item = (o: DbObject) => (
     <button key={key(o)} className={'obj-item' + (mode === 'browse' && sel && key(sel) === key(o) ? ' active' : '')} onClick={() => openObject(o)}>
       <i className="ic">{o.type === 'view' ? '◈' : '▦'}</i>{label(o)}
@@ -246,14 +253,20 @@ export default function Console() {
                 <div className="override-help">
                   {canOverride ? (
                     <>
-                      <div><b>Blocked by the guardrail.</b> You’re an admin on <code>{branch}</code>, so you can let this change through once.</div>
+                      <div>
+                        <b>{blockedRule ? <>Blocked by policy rule <code>{blockedRule}</code>.</> : 'Blocked by the guardrail.'}</b>{' '}
+                        You’re an admin on <code>{branch}</code>, so you can let this change through once.
+                      </div>
                       <div className="row" style={{ marginTop: 10 }}>
-                        <button className="primary danger" disabled={busy} onClick={() => runSql(true)}>Allow &amp; run again</button>
+                        <button className="primary danger" disabled={busy}
+                          onClick={() => runSql(blockedRule ? { allowRules: [blockedRule] } : { allowDestructive: true })}>
+                          {blockedRule ? <>Allow rule {blockedRule} &amp; run again</> : <>Allow &amp; run again</>}
+                        </button>
                       </div>
                     </>
                   ) : (
                     <div>
-                      <b>Blocked by the guardrail.</b> Only admins of <code>{branch}</code> can override it
+                      <b>{blockedRule ? <>Blocked by policy rule <code>{blockedRule}</code>.</> : 'Blocked by the guardrail.'}</b> Only admins of <code>{branch}</code> can override it
                       {admins && <> — you’re signed in as <code>{admins.you}</code></>}. Ask an admin to grant you on
                       the <Link to="/policies">Policies</Link> page, or run{' '}
                       <code>vdb admin grant {admins?.you || '<email>'} --branch {branch}</code>.
@@ -323,7 +336,7 @@ function Grid({ res, showCommand }: { res: QueryResult; showCommand?: boolean })
             </tbody>
           </table>
         </div>
-      ) : (
+      ) : !showCommand && (
         <div className="okmsg">✓ {res.command || 'ok'}</div>
       )}
       {openRow && <JsonModal cols={cols} row={openRow} onClose={() => setExpanded(null)} />}
