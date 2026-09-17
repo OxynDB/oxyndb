@@ -134,6 +134,13 @@ paths:
               required: [sql]
               properties:
                 sql: { type: string, example: "SELECT 1" }
+                allow_destructive:
+                  type: boolean
+                  description: >-
+                    Apply SET vdb.allow_destructive=on to this query. Counts only
+                    when the signed-in user is in vdb_admin on the branch (see
+                    /admins); anyone else stays blocked. The query runs as the
+                    signed-in user's own role.
       responses:
         "200":
           description: Columns and rows, or an error message.
@@ -476,6 +483,52 @@ paths:
       responses:
         "200": { description: Evaluations., content: { application/json: { schema: { type: array, items: { type: object } } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/branches/{name}/admins:
+    get:
+      tags: [policies]
+      summary: Who may override blocking rules on this branch, and whether the caller may.
+      parameters: [{ $ref: "#/components/parameters/BranchName" }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  admins: { type: array, items: { type: string }, description: "Emails in vdb_admin (superusers are not listed)." }
+                  you: { type: string }
+                  you_are_admin: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [policies]
+      summary: Let a user override blocking rules on this branch (needs vdb_admin).
+      parameters: [{ $ref: "#/components/parameters/BranchName" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [email], properties: { email: { type: string, format: email } } }
+      responses:
+        "200": { description: Granted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: The caller is not in vdb_admin on this branch. }
+        "404": { description: No account with that email. }
+
+  /api/branches/{name}/admins/{email}:
+    delete:
+      tags: [policies]
+      summary: Remove a user's permission to override (needs vdb_admin).
+      parameters:
+        - { $ref: "#/components/parameters/BranchName" }
+        - { name: email, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Revoked. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: The caller is not in vdb_admin on this branch. }
+        "404": { description: That user is not an admin here. }
+        "409": { description: That user is the only admin; grant someone else first. }
 
   # Blackbox is the product name for the ledger: every path above is served
   # under /blackbox as well. These aliases mirror them exactly.

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getBranches, runQuery, API, type Branch, type QueryResult } from '../api'
+import { Link } from 'react-router-dom'
+import { getAdmins, getBranches, runQuery, API, type Branch, type BranchAdmins, type QueryResult } from '../api'
 
 type DbObject = { schema: string; name: string; type: 'table' | 'view' }
 type Tab = 'rows' | 'structure' | 'indexes'
@@ -16,12 +17,29 @@ FROM information_schema.tables
 WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
 ORDER BY table_schema, table_type DESC, table_name`
 
+// VectoraDB keeps its own bookkeeping (Blackbox, policies, agent sessions) in
+// the vdb schema of every branch. It is not the user's data, so it is hidden
+// whenever the console opens and shown only on request.
+const isSystem = (o: DbObject) => o.schema === 'vdb' || o.schema.startsWith('vdb_')
+
+// Statements that can add, remove or rename tables, so the schema list is
+// refreshed after they run.
+const DDL = /\b(create|drop|alter|truncate|rename|import\s+foreign)\b/i
+// The guardrail's refusal (docs/policy-errors.md).
+const BLOCKED = /blocked by policy|VDB01/i
+
 export default function Console() {
   const [branches, setBranches] = useState<Branch[]>([])
   const [branch, setBranch] = useState('main')
   const [offline, setOffline] = useState(false)
   const [objects, setObjects] = useState<DbObject[]>([])
+  const [listing, setListing] = useState(false)
+  const [listErr, setListErr] = useState('')
+  const [reloadTick, setReloadTick] = useState(0)
+  const [showSystem, setShowSystem] = useState(false)
   const [filter, setFilter] = useState('')
+  const [admins, setAdmins] = useState<BranchAdmins | null>(null)
+  const [allowDestructive, setAllowDestructive] = useState(false)
 
   const [mode, setMode] = useState<'query' | 'browse'>('query')
   const [sel, setSel] = useState<DbObject | null>(null)
@@ -38,18 +56,38 @@ export default function Console() {
     getBranches().then(b => { setBranches(b); setOffline(false) }).catch(() => setOffline(true))
   }, [])
 
+  // The query API reports SQL errors in the body rather than throwing, so both
+  // paths are checked — an error used to be shown as an empty schema.
   const loadObjects = useCallback(async (b: string) => {
+    setListing(true); setListErr('')
     try {
       const r = await runQuery(b, LIST_SQL)
+      if (r.error) { setListErr(r.error); return }
       setObjects((r.rows || []).map(row => ({
         schema: String(row[0]), name: String(row[1]),
         type: /view/i.test(String(row[2])) ? 'view' : 'table',
       })))
-    } catch { setObjects([]) }
+    } catch (e) {
+      setListErr((e as Error).message)
+    } finally {
+      setListing(false)
+    }
   }, [])
 
   // Reset when the branch changes.
-  useEffect(() => { loadObjects(branch); setSel(null); setMode('query'); setBrowseRes(null) }, [branch, loadObjects])
+  useEffect(() => {
+    setObjects([]); loadObjects(branch); setSel(null); setMode('query'); setBrowseRes(null); setAllowDestructive(false)
+    setAdmins(null)
+    getAdmins(branch).then(setAdmins).catch(() => setAdmins(null))
+  }, [branch, loadObjects])
+
+  // An open table that no longer exists (dropped, renamed) closes itself.
+  useEffect(() => {
+    if (sel && !listing && !listErr && !objects.some(o => key(o) === key(sel))) { setSel(null); setMode('query') }
+  }, [objects, sel, listing, listErr])
+
+  // Reload refreshes both the list and whatever table is open.
+  const reload = () => { loadObjects(branch); setReloadTick(t => t + 1) }
 
   // Load the active browse tab.
   useEffect(() => {
@@ -85,14 +123,24 @@ export default function Console() {
     }
     load()
     return () => { cancelled = true }
-  }, [mode, sel, tab, page, branch])
+  }, [mode, sel, tab, page, branch, reloadTick])
 
   const openObject = (o: DbObject) => { setSel(o); setTab('rows'); setPage(0); setTotal(null); setMode('browse') }
   const switchTab = (t: Tab) => { setTab(t); if (t === 'rows') setPage(0) }
 
-  const runSql = async () => {
+  // The override applies to one run and then switches itself off, so a later
+  // run can't drop something by accident.
+  const runSql = async (override = allowDestructive) => {
     setBusy(true); setQueryRes(null); setMode('query')
-    try { setQueryRes(await runQuery(branch, sql)) } catch (e) { setQueryRes({ error: (e as Error).message }) } finally { setBusy(false) }
+    try {
+      const r = await runQuery(branch, sql, { allowDestructive: override })
+      setQueryRes(r)
+      if (!r.error && DDL.test(sql)) loadObjects(branch)
+    } catch (e) {
+      setQueryRes({ error: (e as Error).message })
+    } finally {
+      setBusy(false); setAllowDestructive(false)
+    }
   }
 
   if (offline) {
@@ -107,9 +155,17 @@ export default function Console() {
   const options = branches.length ? branches : ([{ name: 'main' }] as Branch[])
   const f = filter.trim().toLowerCase()
   const match = (o: DbObject) => !f || o.name.toLowerCase().includes(f) || o.schema.toLowerCase().includes(f)
-  const tables = objects.filter(o => o.type === 'table' && match(o))
-  const views = objects.filter(o => o.type === 'view' && match(o))
+  const tables = objects.filter(o => !isSystem(o) && o.type === 'table' && match(o))
+  const views = objects.filter(o => !isSystem(o) && o.type === 'view' && match(o))
+  const system = objects.filter(o => isSystem(o) && match(o))
   const label = (o: DbObject) => (o.schema === 'public' ? o.name : o.schema + '.' + o.name)
+  const canOverride = admins?.you_are_admin === true
+  const blocked = !!queryRes?.error && BLOCKED.test(queryRes.error)
+  const item = (o: DbObject) => (
+    <button key={key(o)} className={'obj-item' + (mode === 'browse' && sel && key(sel) === key(o) ? ' active' : '')} onClick={() => openObject(o)}>
+      <i className="ic">{o.type === 'view' ? '◈' : '▦'}</i>{label(o)}
+    </button>
+  )
 
   return (
     <div className="fade-up">
@@ -127,7 +183,7 @@ export default function Console() {
         <aside className="obj-panel">
           <div className="obj-head">
             <span>Schema</span>
-            <button title="Refresh" onClick={() => loadObjects(branch)}>↻</button>
+            <button title={listing ? 'Reloading…' : 'Reload tables'} className={listing ? 'spinning' : ''} disabled={listing} onClick={reload}>↻</button>
           </div>
           <div style={{ padding: 8 }}>
             <input className="obj-filter" placeholder="Filter tables…" value={filter} onChange={e => setFilter(e.target.value)} />
@@ -136,21 +192,29 @@ export default function Console() {
             <button className={'obj-item special' + (mode === 'query' ? ' active' : '')} onClick={() => setMode('query')}>
               <i className="ic">⌘</i>SQL query
             </button>
-            {objects.length === 0 && (
-              <div className="obj-empty">No tables yet. Create one with <code>CREATE TABLE …</code> in the SQL query.</div>
+            {listErr && <div className="obj-error">Couldn’t load tables: {listErr}</div>}
+            {listing && objects.length === 0 && <div className="obj-empty">Loading…</div>}
+            {!listing && !listErr && tables.length + views.length === 0 && (
+              <div className="obj-empty">
+                {f ? 'No tables match.' : <>No tables yet. Create one with <code>CREATE TABLE …</code> in the SQL query.</>}
+              </div>
             )}
             {tables.length > 0 && <div className="obj-group">Tables</div>}
-            {tables.map(o => (
-              <button key={key(o)} className={'obj-item' + (mode === 'browse' && sel && key(sel) === key(o) ? ' active' : '')} onClick={() => openObject(o)}>
-                <i className="ic">▦</i>{label(o)}
-              </button>
-            ))}
+            {tables.map(item)}
             {views.length > 0 && <div className="obj-group">Views</div>}
-            {views.map(o => (
-              <button key={key(o)} className={'obj-item' + (mode === 'browse' && sel && key(sel) === key(o) ? ' active' : '')} onClick={() => openObject(o)}>
-                <i className="ic">◈</i>{label(o)}
+            {views.map(item)}
+            {showSystem && system.length > 0 && (
+              <>
+                <div className="obj-group">VectoraDB system</div>
+                {system.map(item)}
+              </>
+            )}
+            {system.length > 0 && (
+              <button className="obj-show-system" onClick={() => setShowSystem(v => !v)} aria-expanded={showSystem}
+                title="Blackbox, policies and agent sessions — kept by VectoraDB, not your data">
+                {showSystem ? 'Hide system tables' : `Show system tables (${system.length})`}
               </button>
-            ))}
+            )}
           </div>
         </aside>
 
@@ -164,10 +228,39 @@ export default function Console() {
                 onChange={e => setSql(e.target.value)}
                 onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') runSql() }}
               />
-              <div className="row" style={{ marginTop: 10 }}>
-                <button className="primary" onClick={runSql} disabled={busy}>{busy ? 'Running…' : 'Run  ⌘/Ctrl+↵'}</button>
+              <div className="row" style={{ marginTop: 10, flexWrap: 'wrap', gap: 12 }}>
+                <button className={'primary' + (allowDestructive ? ' danger' : '')} onClick={() => runSql()} disabled={busy}>
+                  {busy ? 'Running…' : 'Run  ⌘/Ctrl+↵'}
+                </button>
+                <label className={'override-toggle' + (allowDestructive ? ' on' : '')}
+                  title={admins && !canOverride
+                    ? `Only admins of ${branch} can override the guardrail`
+                    : 'Lets DROP TABLE and other blocked changes through, for the next run only'}>
+                  <input type="checkbox" checked={allowDestructive} disabled={busy || (admins !== null && !canOverride)}
+                    onChange={e => setAllowDestructive(e.target.checked)} />
+                  Allow destructive changes <span className="muted">(next run only)</span>
+                </label>
               </div>
               {queryRes && <Grid res={queryRes} showCommand />}
+              {blocked && (
+                <div className="override-help">
+                  {canOverride ? (
+                    <>
+                      <div><b>Blocked by the guardrail.</b> You’re an admin on <code>{branch}</code>, so you can let this change through once.</div>
+                      <div className="row" style={{ marginTop: 10 }}>
+                        <button className="primary danger" disabled={busy} onClick={() => runSql(true)}>Allow &amp; run again</button>
+                      </div>
+                    </>
+                  ) : (
+                    <div>
+                      <b>Blocked by the guardrail.</b> Only admins of <code>{branch}</code> can override it
+                      {admins && <> — you’re signed in as <code>{admins.you}</code></>}. Ask an admin to grant you on
+                      the <Link to="/policies">Policies</Link> page, or run{' '}
+                      <code>vdb admin grant {admins?.you || '<email>'} --branch {branch}</code>.
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           ) : sel && (
             <>

@@ -58,7 +58,7 @@ func Serve(addr string) error {
 	registerAPI(api)
 	registerPipelines(api, store)                        // /api/pipelines* (ETL)
 	registerImpact(api)                                  // /api/branches/{name}/impact, /api/{ledger,blackbox}/diff
-	registerPolicy(api)                                  // /api/branches/{name}/policies* (Blackbox policy gate)
+	registerPolicy(api, store)                           // /api/branches/{name}/policies* and /admins (Blackbox policy gate)
 	registerLedgerV2(api)                                // /api/branches/{name}/ledger/{integrity,checkpoint,export,entries,{id}/branch}
 	store.MountKeys(api)                                 // /api/keys (protected via Authn below)
 	mux.Handle("/api/", store.Authn(blackboxAlias(api))) // …/blackbox… also reaches …/ledger… routes
@@ -184,6 +184,9 @@ func registerAPI(mux *http.ServeMux) {
 		name := r.PathValue("name")
 		var body struct {
 			SQL string `json:"sql"`
+			// AllowDestructive applies SET vdb.allow_destructive=on to this one
+			// query. The guardrail still decides whether it counts.
+			AllowDestructive bool `json:"allow_destructive"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		if strings.TrimSpace(body.SQL) == "" {
@@ -196,7 +199,7 @@ func registerAPI(mux *http.ServeMux) {
 			return
 		}
 		u, _ := auth.UserFrom(r.Context())
-		writeJSON(w, 200, runQuery(addr, body.SQL, u.Email))
+		writeJSON(w, 200, runQuery(addr, body.SQL, queryAs{Branch: name, Actor: u.Email, AllowDestructive: body.AllowDestructive}))
 	})
 
 	// Migration: import a source database into a new instance from a connection
@@ -268,7 +271,7 @@ func registerAPI(mux *http.ServeMux) {
 			writeErr(w, 404, err)
 			return
 		}
-		writeJSON(w, 200, runQuery(addr, ledgerSQL(r.URL.Query()), ""))
+		writeJSON(w, 200, runQuery(addr, ledgerSQL(r.URL.Query()), queryAs{}))
 	})
 
 	// Tamper-evidence: recompute the ledger's hash chain and report whether it
@@ -279,7 +282,7 @@ func registerAPI(mux *http.ServeMux) {
 			writeErr(w, 404, err)
 			return
 		}
-		writeJSON(w, 200, runQuery(addr, branch.LedgerVerifySQL, ""))
+		writeJSON(w, 200, runQuery(addr, branch.LedgerVerifySQL, queryAs{}))
 	})
 }
 
@@ -324,27 +327,62 @@ func ledgerSQL(q url.Values) string {
 		strings.Join(where, " AND "), limit, offset)
 }
 
+// queryAs says whose session a query runs in.
+type queryAs struct {
+	// Branch and Actor identify the signed-in user. When set, the query logs in
+	// as that user's own role, as the Gateway does, so the guardrail knows who is
+	// asking and the Blackbox records the real login. Empty for the engine's own
+	// reads, which run as the shared client role.
+	Branch, Actor string
+	// AllowDestructive applies SET vdb.allow_destructive=on to this query's
+	// session. It is honoured only for superusers and members of vdb_admin.
+	AllowDestructive bool
+}
+
 // runQuery executes SQL against a branch backend and returns columns/rows (or an
 // error message the console can render). Capped and time-bounded.
-func runQuery(addr, sql, actor string) map[string]any {
+func runQuery(addr, sql string, as queryAs) map[string]any {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Connect as the non-superuser client role, so the web console is bound by the
-	// same rules as any other client (RLS, and the append-only ledger).
-	conn, err := pgx.Connect(ctx,
-		fmt.Sprintf("postgres://vdbclient:%s@%s/vectoradb", secrets.Load().PGPassword, addr))
+	cfg, err := pgx.ParseConfig(fmt.Sprintf("postgres://%s/vectoradb", addr))
+	if err != nil {
+		return map[string]any{"error": err.Error()}
+	}
+	// The non-superuser client role, so the web console is bound by the same
+	// rules as any other client (RLS, and the append-only ledger).
+	cfg.User, cfg.Password = "vdbclient", secrets.Load().PGPassword
+	if as.Actor != "" && as.Branch != "" {
+		// The signed-in user's own role: a member of vdbclient that acts as
+		// vdbclient, so data access and object ownership are unchanged, but
+		// session_user is the user. Every console session used to be vdbclient,
+		// which is never in vdb_admin — so no one, not even an admin, could
+		// override the guardrail from the console.
+		if err := branch.EnsureUserRole(as.Branch, as.Actor); err != nil {
+			log.Printf("console: per-user role %q on %s: %v (using vdbclient)", as.Actor, as.Branch, err)
+		} else {
+			cfg.User = as.Actor
+		}
+	}
+	conn, err := pgx.ConnectConfig(ctx, cfg)
 	if err != nil {
 		return map[string]any{"error": err.Error()}
 	}
 	defer conn.Close(ctx)
 
 	// Attribute console DDL in the Blackbox to the signed-in user — our own
-	// tool should not be the blind spot. Reads pass actor="" and skip this.
-	if actor != "" {
+	// tool should not be the blind spot. The engine's reads skip this.
+	if as.Actor != "" {
 		if _, err := conn.Exec(ctx,
 			"SELECT set_config('vdb.actor',$1,false), set_config('vdb.actor_kind','human',false), set_config('application_name','console',false)",
-			actor); err != nil {
+			as.Actor); err != nil {
+			return map[string]any{"error": err.Error()}
+		}
+	}
+	// Each console run is its own connection, so a SET typed in one run is gone
+	// by the next; the override has to travel with the query it is meant for.
+	if as.AllowDestructive {
+		if _, err := conn.Exec(ctx, "SELECT set_config('vdb.allow_destructive','on',false)"); err != nil {
 			return map[string]any{"error": err.Error()}
 		}
 	}

@@ -58,13 +58,14 @@ export default function Docs() {
           <tr><td><code>POST /api/branches</code></td><td>Create a branch — {'{ "name": "qa" }'}</td></tr>
           <tr><td><code>DELETE /api/branches/{'{name}'}</code></td><td>Delete a branch</td></tr>
           <tr><td><code>POST /api/branches/{'{name}'}/suspend|resume</code></td><td>Suspend / resume</td></tr>
-          <tr><td><code>POST /api/branches/{'{name}'}/query</code></td><td>Run SQL — {'{ "sql": "…" }'}</td></tr>
+          <tr><td><code>POST /api/branches/{'{name}'}/query</code></td><td>Run SQL as the signed-in user — {'{ "sql": "…", "allow_destructive": false }'}</td></tr>
           <tr><td><code>GET /api/branches/{'{name}'}/ledger</code></td><td>Blackbox entries (filters: <code>actor</code>, <code>table</code>, <code>risk</code>, <code>status</code>, <code>kind</code>, <code>since</code>, <code>until</code>)</td></tr>
           <tr><td><code>GET …/ledger/verify</code> · <code>…/integrity</code> · <code>…/export</code> · <code>…/entries</code> · <code>…/sessions</code></td><td>Verify the hash chain, check against anchors, export JSONL, list entries and agent sessions</td></tr>
           <tr><td><code>POST …/ledger/checkpoint</code> · <code>POST …/ledger/{'{id}'}/branch</code></td><td>Anchor new entries; branch <code>main</code> from just before an entry</td></tr>
           <tr><td className="muted" colSpan={2}>Every <code>…/ledger…</code> path is also served as <code>…/blackbox…</code></td></tr>
           <tr><td><code>GET /api/branches/{'{name}'}/policies</code> · <code>POST</code> · <code>PUT|DELETE …/{'{rule}'}</code></td><td>Policy gate rules (changes need <code>vdb_admin</code>)</td></tr>
           <tr><td><code>POST …/policies/check</code> · <code>GET …/policies/evaluations</code></td><td>Preview what a statement triggers; recent warnings and blocks</td></tr>
+          <tr><td><code>GET|POST /api/branches/{'{name}'}/admins</code> · <code>DELETE …/admins/{'{email}'}</code></td><td>Who may override blocking rules; grant or revoke it (needs <code>vdb_admin</code>)</td></tr>
           <tr><td><code>POST /api/branches/{'{name}'}/impact</code></td><td>What a change would affect, before running it</td></tr>
           <tr><td><code>GET /api/ledger/diff</code> · <code>GET /api/blackbox/diff</code></td><td>Schema changes distinguishing two branches (<code>?a=&amp;b=</code>)</td></tr>
           <tr><td><code>POST /api/import</code> · <code>POST /api/import/file</code></td><td>Migrate from a connection string ({'{ "source", "target", "continuous" }'}) or an upload</td></tr>

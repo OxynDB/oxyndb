@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/vectoradb/vectoradb/internal/auth"
 	"github.com/vectoradb/vectoradb/internal/branch"
@@ -24,7 +25,10 @@ import (
 //	DELETE /api/branches/{name}/policies/{rule}        remove a custom rule (admin)
 //	POST   /api/branches/{name}/policies/check         preview matches for a statement
 //	GET    /api/branches/{name}/policies/evaluations   recent warnings, blocks, overrides
-func registerPolicy(mux *http.ServeMux) {
+//	GET    /api/branches/{name}/admins                 who may override blocking rules
+//	POST   /api/branches/{name}/admins                 grant that permission (admin)
+//	DELETE /api/branches/{name}/admins/{email}         revoke it (admin)
+func registerPolicy(mux *http.ServeMux, store *auth.Store) {
 	running := func(w http.ResponseWriter, name string) bool {
 		if _, err := branch.EnsureRunning(name); err != nil {
 			writeErr(w, 404, err)
@@ -32,7 +36,7 @@ func registerPolicy(mux *http.ServeMux) {
 		}
 		return true
 	}
-	admin := func(w http.ResponseWriter, r *http.Request, name string) (string, bool) {
+	admin := func(w http.ResponseWriter, r *http.Request, name, what string) (string, bool) {
 		u, _ := auth.UserFrom(r.Context())
 		ok, err := branch.IsAdmin(name, u.Email)
 		if err != nil {
@@ -40,7 +44,7 @@ func registerPolicy(mux *http.ServeMux) {
 			return "", false
 		}
 		if !ok {
-			writeErr(w, 403, fmt.Errorf("changing Blackbox policy rules needs vdb_admin on %q — grant it with: vdb admin grant %s", name, u.Email))
+			writeErr(w, 403, fmt.Errorf("%s needs vdb_admin on %q — ask an admin to grant it on the Policies page, or run: vdb admin grant %s --branch %s", what, name, u.Email, name))
 			return "", false
 		}
 		return u.Email, true
@@ -76,7 +80,7 @@ func registerPolicy(mux *http.ServeMux) {
 		if !running(w, name) {
 			return
 		}
-		email, ok := admin(w, r, name)
+		email, ok := admin(w, r, name, "changing Blackbox policy rules")
 		if !ok {
 			return
 		}
@@ -100,7 +104,7 @@ func registerPolicy(mux *http.ServeMux) {
 		if !running(w, name) {
 			return
 		}
-		email, ok := admin(w, r, name)
+		email, ok := admin(w, r, name, "changing Blackbox policy rules")
 		if !ok {
 			return
 		}
@@ -124,7 +128,7 @@ func registerPolicy(mux *http.ServeMux) {
 		if !running(w, name) {
 			return
 		}
-		email, ok := admin(w, r, name)
+		email, ok := admin(w, r, name, "changing Blackbox policy rules")
 		if !ok {
 			return
 		}
@@ -167,5 +171,99 @@ func registerPolicy(mux *http.ServeMux) {
 			return
 		}
 		writeJSON(w, 200, evs)
+	})
+
+	// Who may override a blocking rule: members of vdb_admin (and superusers).
+	// Anyone signed in may look, so the console can tell a user whether an
+	// override will work before they try; granting and revoking need vdb_admin
+	// on the branch, like changing rules — otherwise anyone could grant
+	// themselves.
+	mux.HandleFunc("GET /api/branches/{name}/admins", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		if !running(w, name) {
+			return
+		}
+		u, _ := auth.UserFrom(r.Context())
+		names, err := branch.ListAdmins(name)
+		if err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		you, err := branch.IsAdmin(name, u.Email)
+		if err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		if names == nil {
+			names = []string{}
+		}
+		writeJSON(w, 200, map[string]any{"admins": names, "you": u.Email, "you_are_admin": you})
+	})
+
+	mux.HandleFunc("POST /api/branches/{name}/admins", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		if !running(w, name) {
+			return
+		}
+		if _, ok := admin(w, r, name, "granting override permission"); !ok {
+			return
+		}
+		var body struct {
+			Email string `json:"email"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, 400, fmt.Errorf("invalid JSON: %w", err))
+			return
+		}
+		email := strings.ToLower(strings.TrimSpace(body.Email))
+		if email == "" {
+			writeErr(w, 400, fmt.Errorf("email is required"))
+			return
+		}
+		u, ok := store.UserByEmail(email)
+		if !ok {
+			writeErr(w, 404, fmt.Errorf("no account for %s — they need to sign up first", email))
+			return
+		}
+		if err := branch.GrantAdmin(name, u.Email); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, 200, map[string]string{"email": u.Email, "branch": name, "status": "granted"})
+	})
+
+	mux.HandleFunc("DELETE /api/branches/{name}/admins/{email}", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		if !running(w, name) {
+			return
+		}
+		if _, ok := admin(w, r, name, "revoking override permission"); !ok {
+			return
+		}
+		email := strings.ToLower(strings.TrimSpace(r.PathValue("email")))
+		names, err := branch.ListAdmins(name)
+		if err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		found := false
+		for _, n := range names {
+			found = found || n == email
+		}
+		if !found {
+			writeErr(w, 404, fmt.Errorf("%s is not an admin on %q", email, name))
+			return
+		}
+		// Removing the last admin would leave nobody who can grant it back from
+		// the web console.
+		if len(names) == 1 {
+			writeErr(w, 409, fmt.Errorf("%s is the only admin on %q — grant someone else first (or run: vdb admin revoke %s --branch %s)", email, name, email, name))
+			return
+		}
+		if err := branch.RevokeAdmin(name, email); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, 200, map[string]string{"email": email, "branch": name, "status": "revoked"})
 	})
 }
