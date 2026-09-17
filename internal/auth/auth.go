@@ -7,6 +7,7 @@
 package auth
 
 import (
+	"context"
 	crand "crypto/rand"
 	"crypto/sha256"
 	"database/sql"
@@ -95,36 +96,84 @@ func Open(cfg Config) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := db.Exec(schema); err != nil {
-		db.Close()
-		return nil, err
-	}
-	if err := migrate(db); err != nil {
+	if err := initSchema(db); err != nil {
 		db.Close()
 		return nil, err
 	}
 	return &Store{db: db, cfg: cfg}, nil
 }
 
+// initSchema creates and migrates the store.
+//
+// `vdb start` launches the control plane, the Gateway and the Agent API
+// together, and on a new install all three create this file at the same
+// moment. SQLite answers SQLITE_BUSY immediately — without waiting out
+// busy_timeout — when two connections that began by reading both try to
+// write, and while one process switches the file to WAL. The losers exited,
+// so the first `vdb start` of a new install left the control plane and the
+// Agent API down (found by running the integration suites on a fresh VM).
+//
+// So the work runs in BEGIN IMMEDIATE, which takes the write lock before
+// reading anything and therefore does wait on busy_timeout, and a BUSY that
+// still gets through (the WAL switch happens when the connection opens) is
+// retried for a while.
+func initSchema(db *sql.DB) error {
+	deadline := time.Now().Add(30 * time.Second)
+	for attempt := 1; ; attempt++ {
+		err := initSchemaOnce(db)
+		if err == nil || !isBusy(err) || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(time.Duration(min(attempt, 10)) * 50 * time.Millisecond)
+	}
+}
+
+func initSchemaOnce(db *sql.DB) error {
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return err
+	}
+	if _, err := conn.ExecContext(ctx, schema); err != nil {
+		_, _ = conn.ExecContext(ctx, "ROLLBACK")
+		return err
+	}
+	if err := migrate(ctx, conn); err != nil {
+		_, _ = conn.ExecContext(ctx, "ROLLBACK")
+		return err
+	}
+	_, err = conn.ExecContext(ctx, "COMMIT")
+	return err
+}
+
+func isBusy(err error) bool {
+	m := err.Error()
+	return strings.Contains(m, "SQLITE_BUSY") || strings.Contains(m, "database is locked")
+}
+
 // migrate applies what the CREATE TABLE statements above cannot: they run with
 // IF NOT EXISTS, so an existing install keeps the columns it was created with.
 // Every step must be safe to repeat on each open.
-func migrate(db *sql.DB) error {
-	has, err := hasColumn(db, "api_keys", "scope")
+func migrate(ctx context.Context, db *sql.Conn) error {
+	has, err := hasColumn(ctx, db, "api_keys", "scope")
 	if err != nil {
 		return err
 	}
 	if !has {
 		// Existing keys are unscoped, which is what the empty default means.
-		if _, err := db.Exec(`ALTER TABLE api_keys ADD COLUMN scope TEXT NOT NULL DEFAULT ''`); err != nil {
+		if _, err := db.ExecContext(ctx, `ALTER TABLE api_keys ADD COLUMN scope TEXT NOT NULL DEFAULT ''`); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func hasColumn(db *sql.DB, table, column string) (bool, error) {
-	rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, table)
+func hasColumn(ctx context.Context, db *sql.Conn, table, column string) (bool, error) {
+	rows, err := db.QueryContext(ctx, `SELECT name FROM pragma_table_info(?)`, table)
 	if err != nil {
 		return false, err
 	}

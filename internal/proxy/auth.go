@@ -249,9 +249,13 @@ func nonce() (string, error) {
 // current_setting('vectoradb.*')). It appends to any options the client sent.
 // The values here (email, branch name, alphanumeric session) contain no spaces,
 // so no escaping is required.
-func ledgerOptions(existing, actor, branch string) string {
-	sid, _ := nonce()
-	sid = strings.NewReplacer("+", "", "/", "", "=", "").Replace(sid)
+//
+// ownSession adds a fresh vdb.session for this connection. An agent's
+// branch-scoped key passes false: an agent branch created with provenance keeps
+// its session, task and parent as database defaults (branch.sessionDefaultsSQL),
+// and a session set here would override the database's, so the agent's changes
+// would no longer carry the session it was created with.
+func ledgerOptions(existing, actor, branch string, ownSession bool) string {
 	parts := []string{}
 	if existing != "" {
 		parts = append(parts, existing)
@@ -271,6 +275,9 @@ func ledgerOptions(existing, actor, branch string) string {
 	}
 	add("vdb.actor_kind", kind)
 	add("vdb.branch", branch)
-	add("vdb.session", sid)
+	if ownSession {
+		sid, _ := nonce()
+		add("vdb.session", strings.NewReplacer("+", "", "/", "", "=", "").Replace(sid))
+	}
 	return strings.Join(parts, " ")
 }

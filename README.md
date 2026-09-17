@@ -353,8 +353,14 @@ vdb import-cutover live                                         # finish the cut
 make build        # host binary -> ./bin/vdb
 make vm-build     # Linux engine binary into the Lima VM (macOS)
 make vet test     # go vet + unit tests (also run in CI on Linux and Windows)
-make integration  # full end-to-end test inside the VM
+make integration  # full end-to-end test, in a throwaway test VM
 ```
+
+The integration suites (`make integration`, `integration-v2`, `integration-update`)
+are destructive — they wipe Blackbox history, restore `main` to an earlier point and
+fail HA over — so they run in a VM of their own (`vdb-test`, created on first use by
+`make test-vm`), never in the VM that holds your install, and refuse to start
+anywhere else. `make test-vm-stop` frees its memory; `make test-vm-delete` removes it.
 
 The web app lives in `web/` (Vite + React + TypeScript) and is embedded into the
 engine binary via the `embedui` build tag, then served same-origin by `vdb start`.

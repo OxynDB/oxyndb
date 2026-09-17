@@ -2,7 +2,10 @@
 
 package proxy
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // A branch-scoped key is an agent's only credential, so the check that confines
 // it to its own branch is the whole of that confinement.
@@ -23,6 +26,26 @@ func TestScopeAllows(t *testing.T) {
 	for _, c := range cases {
 		if got := scopeAllows(c.scope, c.target); got != c.want {
 			t.Errorf("scopeAllows(%q, %q) = %v, want %v — %s", c.scope, c.target, got, c.want, c.why)
+		}
+	}
+}
+
+// An agent connecting with its branch-scoped key must not get a session from
+// the Gateway: its branch holds the session it was created with as a database
+// default, and a startup option would override that default, so the agent's
+// changes would stop carrying its session (integration-v2 §7 caught this).
+func TestLedgerOptionsLeavesAgentSessionToTheBranch(t *testing.T) {
+	human := ledgerOptions("", "ada@example.com", "main", true)
+	if !strings.Contains(human, "vdb.session=") {
+		t.Errorf("a person's connection should get its own session: %q", human)
+	}
+	agent := ledgerOptions("", "agent-alice", "agent-alice", false)
+	if strings.Contains(agent, "vdb.session") {
+		t.Errorf("an agent key's connection must not override the branch's session: %q", agent)
+	}
+	for _, want := range []string{"vdb.actor=agent-alice", "vdb.actor_kind=agent", "vdb.branch=agent-alice"} {
+		if !strings.Contains(agent, want) {
+			t.Errorf("agent options %q lack %s", agent, want)
 		}
 	}
 }

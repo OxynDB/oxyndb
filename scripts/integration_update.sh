@@ -10,6 +10,10 @@
 # stack is put back on /usr/local/bin/vdb at the end.
 set -uo pipefail
 
+# Refuses to run anywhere but the throwaway test VM (see scripts/lib/test_guard.sh).
+# A guard that can't be found must stop the suite, not let it carry on.
+. "$(cd "$(dirname "$0")" && pwd)/lib/test_guard.sh" || exit 2
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ARCH="$(go env GOARCH)"
 T="$(mktemp -d /tmp/vdbupd.XXXXXX)"
