@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/oxyndb/oxyndb/internal/ledger"
+	"github.com/OxynDB/oxyndb/internal/ledger"
 )
 
 // Blackbox 2.0 checkpoints: a Merkle root over a contiguous range of ledger

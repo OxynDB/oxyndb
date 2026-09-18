@@ -22,8 +22,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/oxyndb/oxyndb/internal/ledger"
-	"github.com/oxyndb/oxyndb/internal/secrets"
+	"github.com/OxynDB/oxyndb/internal/ledger"
+	"github.com/OxynDB/oxyndb/internal/secrets"
 )
 
 const (

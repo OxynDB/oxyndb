@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/oxyndb/oxyndb/internal/daemon"
-	"github.com/oxyndb/oxyndb/internal/host"
-	"github.com/oxyndb/oxyndb/internal/update"
+	"github.com/OxynDB/oxyndb/internal/daemon"
+	"github.com/OxynDB/oxyndb/internal/host"
+	"github.com/OxynDB/oxyndb/internal/update"
 )
 
 const updateUsage = `usage: odb update [--check] [--yes] [--version vX.Y.Z]

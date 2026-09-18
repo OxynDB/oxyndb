@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/oxyndb/oxyndb/internal/auth"
+	"github.com/OxynDB/oxyndb/internal/auth"
 )
 
 // Authentication for the MCP server.

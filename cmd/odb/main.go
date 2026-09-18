@@ -18,16 +18,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/oxyndb/oxyndb/internal/agentapi"
-	"github.com/oxyndb/oxyndb/internal/auth"
-	"github.com/oxyndb/oxyndb/internal/branch"
-	"github.com/oxyndb/oxyndb/internal/controlplane"
-	"github.com/oxyndb/oxyndb/internal/daemon"
-	"github.com/oxyndb/oxyndb/internal/host"
-	"github.com/oxyndb/oxyndb/internal/mcp"
-	"github.com/oxyndb/oxyndb/internal/proxy"
-	"github.com/oxyndb/oxyndb/internal/version"
-	"github.com/oxyndb/oxyndb/web"
+	"github.com/OxynDB/oxyndb/internal/agentapi"
+	"github.com/OxynDB/oxyndb/internal/auth"
+	"github.com/OxynDB/oxyndb/internal/branch"
+	"github.com/OxynDB/oxyndb/internal/controlplane"
+	"github.com/OxynDB/oxyndb/internal/daemon"
+	"github.com/OxynDB/oxyndb/internal/host"
+	"github.com/OxynDB/oxyndb/internal/mcp"
+	"github.com/OxynDB/oxyndb/internal/proxy"
+	"github.com/OxynDB/oxyndb/internal/version"
+	"github.com/OxynDB/oxyndb/web"
 )
 
 // background services managed by `start`/`stop` (name -> subcommand + flags).

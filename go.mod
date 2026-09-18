@@ -1,4 +1,4 @@
-module github.com/oxyndb/oxyndb
+module github.com/OxynDB/oxyndb
 
 go 1.26
 

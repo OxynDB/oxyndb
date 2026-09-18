@@ -17,7 +17,7 @@ Describe 'Get-OdbAsset (latest)' {
     }
     It 'builds a latest release URL' {
         Get-OdbAsset 'odb-windows-amd64.exe' |
-            Should -Be 'https://github.com/oxyndb/oxynDB/releases/latest/download/odb-windows-amd64.exe'
+            Should -Be 'https://github.com/OxynDB/oxyndb/releases/latest/download/odb-windows-amd64.exe'
     }
 }
 
@@ -29,7 +29,7 @@ Describe 'Get-OdbAsset (pinned)' {
     AfterAll { $env:ODB_VERSION = $null }
     It 'builds a versioned release URL' {
         Get-OdbAsset 'odb-windows-amd64.exe' |
-            Should -Be 'https://github.com/oxyndb/oxynDB/releases/download/v1.2.3/odb-windows-amd64.exe'
+            Should -Be 'https://github.com/OxynDB/oxyndb/releases/download/v1.2.3/odb-windows-amd64.exe'
     }
 }
 

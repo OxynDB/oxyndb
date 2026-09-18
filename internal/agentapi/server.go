@@ -21,9 +21,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/oxyndb/oxyndb/internal/auth"
-	"github.com/oxyndb/oxyndb/internal/branch"
-	"github.com/oxyndb/oxyndb/internal/tlsutil"
+	"github.com/OxynDB/oxyndb/internal/auth"
+	"github.com/OxynDB/oxyndb/internal/branch"
+	"github.com/OxynDB/oxyndb/internal/tlsutil"
 )
 
 // agentTTL is how long an agent branch may live before the reaper removes it

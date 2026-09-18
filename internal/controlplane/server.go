@@ -21,14 +21,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OxynDB/oxyndb/internal/auth"
+	"github.com/OxynDB/oxyndb/internal/branch"
+	"github.com/OxynDB/oxyndb/internal/daemon"
+	"github.com/OxynDB/oxyndb/internal/secrets"
+	"github.com/OxynDB/oxyndb/internal/tlsutil"
+	"github.com/OxynDB/oxyndb/web"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/oxyndb/oxyndb/internal/auth"
-	"github.com/oxyndb/oxyndb/internal/branch"
-	"github.com/oxyndb/oxyndb/internal/daemon"
-	"github.com/oxyndb/oxyndb/internal/secrets"
-	"github.com/oxyndb/oxyndb/internal/tlsutil"
-	"github.com/oxyndb/oxyndb/web"
 )
 
 var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,40}$`)

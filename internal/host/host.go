@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/oxyndb/oxyndb/internal/update"
+	"github.com/OxynDB/oxyndb/internal/update"
 )
 
 // Guest environment variable marks a odb process that is already running inside
@@ -196,9 +196,9 @@ func refreshEngineBinary(arch string) string {
 		// Deliberately unverified (an air-gapped mirror, or a release whose
 		// checksums are unreachable). Same behaviour as before verification.
 		fmt.Println("note: ODB_NO_VERIFY is set — the engine download will not be checked against SHA256SUMS.")
-		url := fmt.Sprintf("https://github.com/%s/releases/latest/download/%s", envOr("ODB_REPO", "oxyndb/oxynDB"), asset)
+		url := fmt.Sprintf("https://github.com/%s/releases/latest/download/%s", envOr("ODB_REPO", "OxynDB/oxyndb"), asset)
 		if v := envOr("ODB_VERSION", "latest"); v != "latest" {
-			url = fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", envOr("ODB_REPO", "oxyndb/oxynDB"), v, asset)
+			url = fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", envOr("ODB_REPO", "OxynDB/oxyndb"), v, asset)
 		}
 		if err := downloadFile(url, dest); err != nil || !isELF(dest) {
 			_ = os.Remove(dest)

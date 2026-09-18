@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/oxyndb/oxyndb/internal/version"
+	"github.com/OxynDB/oxyndb/internal/version"
 )
 
 // hostSetup is the Windows bootstrap: ensure a ZFS-capable WSL2 distro and bring

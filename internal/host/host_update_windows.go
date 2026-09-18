@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/oxyndb/oxyndb/internal/update"
+	"github.com/OxynDB/oxyndb/internal/update"
 )
 
 // wslEngine updates the engine inside the WSL distro.

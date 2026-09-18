@@ -131,7 +131,7 @@ export default function AppLayout() {
         </nav>
 
         <div className="sb-foot">
-          <a className="sb-link" href="https://github.com/oxyndb/oxynDB" target="_blank" rel="noreferrer" title={tip('GitHub')}>
+          <a className="sb-link" href="https://github.com/OxynDB/oxyndb" target="_blank" rel="noreferrer" title={tip('GitHub')}>
             <I.IconExternal className="sb-icon" />
             <span className="sb-text">GitHub</span>
           </a>

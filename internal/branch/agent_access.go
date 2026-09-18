@@ -13,7 +13,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/oxyndb/oxyndb/internal/auth"
+	"github.com/OxynDB/oxyndb/internal/auth"
 )
 
 // How an agent reaches its branch.

@@ -29,6 +29,13 @@ func TestNoOldProductNames(t *testing.T) {
 		`(^|[^A-Za-z0-9_])v` + `ec-`,                   // the old container prefix
 	}, "|"))
 
+	// The repository is github.com/OxynDB/oxyndb. GitHub resolves any casing, so
+	// a wrong one works in a browser and slips through review, but the Go module
+	// path is case-sensitive and must match it exactly. Image names on ghcr.io are
+	// the exception: they must be lowercase (ghcr.io/oxyndb/…), so they are not
+	// matched here.
+	wrongRepo := regexp.MustCompile(`(github\.com|githubusercontent\.com|repos)/oxyndb/|/oxyn` + `DB\b`)
+
 	root := filepath.Join("..", "..")
 	skipDir := map[string]bool{".git": true, "node_modules": true, "dist": true, "bin": true, ".claude": true}
 	binary := regexp.MustCompile(`\.(pdf|png|jpe?g|webp|ico|gif|woff2?|ttf|exe|tar|gz|zip)$`)
@@ -64,6 +71,10 @@ func TestNoOldProductNames(t *testing.T) {
 			if old.MatchString(line) && !strings.Contains(strings.ToLower(line), "renamed from") {
 				rel, _ := filepath.Rel(root, path)
 				t.Errorf("%s:%d still uses an old product name: %s", rel, n, strings.TrimSpace(truncate(line, 160)))
+			}
+			if wrongRepo.MatchString(line) {
+				rel, _ := filepath.Rel(root, path)
+				t.Errorf("%s:%d names the repository with the wrong casing (it is OxynDB/oxyndb): %s", rel, n, strings.TrimSpace(truncate(line, 160)))
 			}
 		}
 		return sc.Err()

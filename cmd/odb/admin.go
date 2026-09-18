@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/oxyndb/oxyndb/internal/branch"
+	"github.com/OxynDB/oxyndb/internal/branch"
 )
 
 // adminCmd handles `odb admin grant|revoke <email> [--branch <name>]` and

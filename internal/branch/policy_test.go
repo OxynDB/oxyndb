@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/oxyndb/oxyndb/internal/ledger"
+	"github.com/OxynDB/oxyndb/internal/ledger"
 )
 
 func TestValidatePolicyRule(t *testing.T) {

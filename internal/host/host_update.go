@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/oxyndb/oxyndb/internal/update"
-	"github.com/oxyndb/oxyndb/internal/version"
+	"github.com/OxynDB/oxyndb/internal/update"
+	"github.com/OxynDB/oxyndb/internal/version"
 )
 
 // UpdateOptions are the flags of `odb update`.

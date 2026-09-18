@@ -7,7 +7,7 @@
 #   Linux:  sudo odb start # provisions ZFS/Docker/image and brings everything up
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/oxyndb/oxynDB/main/deploy/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/OxynDB/oxyndb/main/deploy/install.sh | sh
 #
 # Every download is checked against the release's SHA256SUMS before it is
 # installed: these binaries are run as root, and a truncated or altered download
@@ -16,14 +16,14 @@
 #
 # Env overrides:
 #   ODB_VERSION   release tag to install         (default: latest)
-#   ODB_REPO      GitHub owner/repo              (default: oxyndb/oxynDB)
+#   ODB_REPO      GitHub owner/repo              (default: OxynDB/oxyndb)
 #   ODB_DIST      install from a local dir of prebuilt binaries instead of downloading
 #   ODB_PREFIX    install prefix                 (default: /usr/local)
 #   ODB_BASE_URL  release download base URL      (default: GitHub releases)
 #   ODB_NO_VERIFY set to 1 to skip checksum verification
 set -eu
 
-REPO="${ODB_REPO:-oxyndb/oxynDB}"
+REPO="${ODB_REPO:-OxynDB/oxyndb}"
 VERSION="${ODB_VERSION:-latest}"
 PREFIX="${ODB_PREFIX:-/usr/local}"
 BINDIR="$PREFIX/bin"

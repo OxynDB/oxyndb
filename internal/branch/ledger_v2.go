@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/oxyndb/oxyndb/internal/ledger"
+	"github.com/OxynDB/oxyndb/internal/ledger"
 )
 
 // EnsureLedgerV2 installs (or upgrades) the Blackbox 2.0 additions on a

@@ -12,7 +12,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/oxyndb/oxyndb/internal/update"
+	"github.com/OxynDB/oxyndb/internal/update"
 )
 
 // limaEngine updates the engine inside the Lima VM.

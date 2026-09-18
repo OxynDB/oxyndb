@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/oxyndb/oxyndb/internal/branch"
+	"github.com/OxynDB/oxyndb/internal/branch"
 )
 
 // registerLedgerV2 mounts the Blackbox 2.0 endpoints (behind auth):

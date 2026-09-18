@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/oxyndb/oxyndb/internal/branch"
+	"github.com/OxynDB/oxyndb/internal/branch"
 )
 
 func argPresent(args []string, flag string) bool {
