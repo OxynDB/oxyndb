@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/vectoradb/vectoradb/internal/auth"
 	"github.com/vectoradb/vectoradb/internal/branch"
 	"github.com/vectoradb/vectoradb/internal/daemon"
@@ -506,7 +507,7 @@ func runQuery(addr, sql string, as queryAs) map[string]any {
 		}
 		row := make([]any, len(vals))
 		for i, v := range vals {
-			row[i] = cell(v)
+			row[i] = cell(v, fds[i].DataTypeOID, conn.TypeMap())
 		}
 		out = append(out, row)
 	}
@@ -516,23 +517,103 @@ func runQuery(addr, sql string, as queryAs) map[string]any {
 	return map[string]any{"columns": cols, "rows": out, "command": rows.CommandTag().String()}
 }
 
-func cell(v any) any {
+// cell renders one result value for the console.
+//
+// pgx decodes each column into the Go type that fits it, and for several types
+// that is a byte array or a struct with no useful JSON form. A uuid decodes to
+// [16]byte, so it used to reach the console as "[195,64,152,78,…]" — 16 numbers
+// where the user expects c340984e-87bf-4006-a013-72aca6fc7d77. An interval
+// became {"Microseconds":7200000000,"Days":1,…}, an inet carried its quotes,
+// and bytea was mangled into whatever its bytes looked like as text. For those,
+// Postgres's own text form — what psql would print — is both correct and what
+// someone reading a table wants, and pgx can produce it for any type it knows
+// (pgText). Values that already render well are left exactly as they were.
+func cell(v any, oid uint32, m *pgtype.Map) any {
 	switch t := v.(type) {
 	case nil, bool, string, int16, int32, int64, float32, float64:
 		return v
-	case []byte:
-		return string(t)
 	case time.Time:
 		return t.Format(time.RFC3339Nano)
-	default:
-		// jsonb objects/arrays and other composites: render as real JSON so they're
-		// readable and copy-pasteable (pgx decodes jsonb into Go maps/slices, which
-		// %v would print as `map[$oid:…]`). Fall back to %v if it can't be marshaled.
-		if b, err := json.Marshal(v); err == nil {
-			return string(b)
+	case [16]byte:
+		// uuid.
+		if s, ok := pgText(m, oid, v); ok {
+			return s
 		}
-		return fmt.Sprintf("%v", v)
+		return fmt.Sprintf("%x", t)
+	case []byte:
+		// bytea, which Postgres writes as \x0102; string(t) would hand the browser
+		// raw bytes. Only for a real bytea column: pgx also returns []byte for a
+		// type it has no codec for — a custom enum or domain arrives as the bytes
+		// of its text form — and hex would make those unreadable.
+		if oid == pgtype.ByteaOID {
+			if s, ok := pgText(m, oid, v); ok {
+				return s
+			}
+		}
+		return string(t)
+	case []any:
+		// An array column (pgx decodes every array to []any). Its elements can be
+		// any of the above — a uuid[] would otherwise be a list of lists of
+		// numbers — so each is rendered on its own, by the element's own type.
+		elem := elementOID(m, oid)
+		out := make([]any, len(t))
+		for i, e := range t {
+			out[i] = cell(e, elem, m)
+		}
+		return jsonText(out)
+	case map[string]any:
+		// jsonb/json objects: real JSON, readable and copy-pasteable.
+		return jsonText(v)
 	}
+	// pgtype's own types that define a JSON form (numeric, point, …) keep it.
+	if _, ok := v.(json.Marshaler); ok {
+		return jsonText(v)
+	}
+	// Everything else — interval, time of day, bits, inet, macaddr, the geometric
+	// types, ranges, hstore — as Postgres writes it.
+	if s, ok := pgText(m, oid, v); ok {
+		return s
+	}
+	return jsonText(v)
+}
+
+// pgText asks pgx for Postgres's text representation of a decoded value. It
+// fails (ok false) when the type map has no encoder for that OID, in which case
+// the caller keeps whatever it did before.
+func pgText(m *pgtype.Map, oid uint32, v any) (string, bool) {
+	if m == nil || oid == 0 {
+		return "", false
+	}
+	b, err := m.Encode(oid, pgtype.TextFormatCode, v, nil)
+	if err != nil || b == nil {
+		return "", false
+	}
+	return string(b), true
+}
+
+// elementOID is the element type of an array type, so array members can be
+// rendered by their own type. 0 when oid is not a known array type.
+func elementOID(m *pgtype.Map, oid uint32) uint32 {
+	if m == nil {
+		return 0
+	}
+	t, ok := m.TypeForOID(oid)
+	if !ok {
+		return 0
+	}
+	if ac, ok := t.Codec.(*pgtype.ArrayCodec); ok && ac.ElementType != nil {
+		return ac.ElementType.OID
+	}
+	return 0
+}
+
+// jsonText renders a value as JSON, falling back to %v (which is what the
+// console showed before there was anything better).
+func jsonText(v any) any {
+	if b, err := json.Marshal(v); err == nil {
+		return string(b)
+	}
+	return fmt.Sprintf("%v", v)
 }
 
 // cors echoes the specific UI origin and allows credentials (cookies), which

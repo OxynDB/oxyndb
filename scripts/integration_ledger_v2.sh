@@ -439,20 +439,23 @@ assert_eq "MCP verify_blackbox matches verify_ledger" \
   "$(mcp_call verify_blackbox '{"branch":"main"}')" "$(mcp_call verify_ledger '{"branch":"main"}')"
 
 echo "### 5b. Blackbox page: filters, session column (L5)"
-gw "$KEY" main "CREATE TABLE v2page_t(x int)" >/dev/null
-gw "$KEY" main "ALTER TABLE v2page_t ADD COLUMN y int; ALTER TABLE v2page_t DROP COLUMN y" >/dev/null
+# A table name of its own per run: the ledger is append-only and nothing clears
+# it between runs, so a fixed name counted the previous run's entries as well.
+PT="v2page_$(date +%s)"
+gw "$KEY" main "CREATE TABLE $PT(x int)" >/dev/null
+gw "$KEY" main "ALTER TABLE $PT ADD COLUMN y int; ALTER TABLE $PT DROP COLUMN y" >/dev/null
 lcols() { curl -sk -H "$AUTH" "$API/api/branches/main/ledger?$1" | jcols; }
 lcount() { curl -sk -H "$AUTH" "$API/api/branches/main/ledger?$1" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)["rows"]))'; }
 assert_eq "with=session adds the session column" "$(lcols 'limit=1&with=session')" \
   "at,actor,actor_kind,tool,branch,command_tag,object_identity,statement,status,risk,session"
 assert_eq "without it the columns are unchanged" "$(lcols 'limit=1')" \
   "at,actor,actor_kind,tool,branch,command_tag,object_identity,statement,status,risk"
-assert_eq "table filter" "$(lcount 'table=v2page_t&limit=50')" "3"
-assert_eq "table + risk filter" "$(lcount 'table=v2page_t&risk=drop-column&limit=50')" "1"
+assert_eq "table filter" "$(lcount "table=$PT&limit=50")" "3"
+assert_eq "table + risk filter" "$(lcount "table=$PT&risk=drop-column&limit=50")" "1"
 TODAY="$(pg vec-main "SELECT to_char(now(),'YYYY-MM-DD')")"
-assert_eq "date range filter includes today" "$(lcount "table=v2page_t&since=$TODAY&until=$TODAY%2023:59:59&limit=50")" "3"
-assert_eq "date range filter excludes an earlier day" "$(lcount 'table=v2page_t&until=2000-01-01%2023:59:59&limit=50')" "0"
-pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2page_t" >/dev/null
+assert_eq "date range filter includes today" "$(lcount "table=$PT&since=$TODAY&until=$TODAY%2023:59:59&limit=50")" "3"
+assert_eq "date range filter excludes an earlier day" "$(lcount "table=$PT&until=2000-01-01%2023:59:59&limit=50")" "0"
+pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS $PT" >/dev/null
 
 echo "### 6. Blackbox policy gate (warn / block — docs/policy-errors.md)"
 # gwv: psql through the gateway with SQLSTATEs shown ("NOTICE:  VDB02: …").
@@ -551,6 +554,22 @@ pg vec-main "SET vdb.allow_destructive=on; DROP TABLE IF EXISTS v2console" >/dev
 cq "CREATE TABLE v2console(x int)" >/dev/null
 assert_eq "console: runs as the signed-in user" \
   "$(cq 'SELECT session_user' | python3 -c 'import sys,json; print(json.load(sys.stdin)["rows"][0][0])')" "$USER_EMAIL"
+# L4: the console shows a value, not the Go type pgx decoded it into. A uuid
+# column reached the page as a list of 16 numbers, an interval as
+# {"Microseconds":…}, an inet with its quotes and a bytea as mangled text.
+cells() { cq "$1" | python3 -c 'import sys,json; print(json.load(sys.stdin)["rows"][0][0])'; }
+assert_eq "console: a uuid is a uuid, not 16 numbers" \
+  "$(cells "SELECT 'c340984e-87bf-4006-a013-72aca6fc7d77'::uuid")" "c340984e-87bf-4006-a013-72aca6fc7d77"
+assert_eq "console: an array of uuids keeps them readable" \
+  "$(cells "SELECT ARRAY['c340984e-87bf-4006-a013-72aca6fc7d77'::uuid]")" '["c340984e-87bf-4006-a013-72aca6fc7d77"]'
+assert_eq "console: an interval reads as Postgres writes it" \
+  "$(cells "SELECT '1 day 2 hours'::interval")" "1 day 02:00:00"
+assert_eq "console: an inet carries no quotes" "$(cells "SELECT '192.168.1.1'::inet")" "192.168.1.1/32"
+assert_eq "console: a bytea is hex, not raw bytes" "$(cells "SELECT decode('0102','hex')")" '\x0102'
+# …and the types that already read well are untouched.
+assert_eq "console: numeric, jsonb, arrays and timestamps are unchanged" \
+  "$(cells 'SELECT 1234.5678::numeric')|$(cells $'SELECT \'{"a":1}\'::jsonb')|$(cells 'SELECT ARRAY[1,2,3]')|$(cells "SELECT 'hi'::text")" \
+  '1234.5678|{"a":1}|[1,2,3]|hi'
 assert_eq "REST: admins says the caller is not one" "$(admins_you)" "$USER_EMAIL False"
 assert_eq "console: a non-admin's override is still refused" "$(cq 'DROP TABLE v2console' 1 | grep -c 'blocked by policy')" "1"
 assert_eq "REST: a non-admin can't grant override permission (403)" \
