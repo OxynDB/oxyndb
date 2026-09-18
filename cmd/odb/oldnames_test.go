@@ -26,7 +26,7 @@ func TestNoOldProductNames(t *testing.T) {
 		`[Vv]ector` + `a`, // the old brand, any casing of what follows
 		`VECTOR` + `ADB`,
 		`(^|[^A-Za-z0-9])(v` + `db|V` + `DB|V` + `db)`, // the old command and its prefixes
-		`(^|[^A-Za-z0-9_])v` + `ec-`,                    // the old container prefix
+		`(^|[^A-Za-z0-9_])v` + `ec-`,                   // the old container prefix
 	}, "|"))
 
 	root := filepath.Join("..", "..")
