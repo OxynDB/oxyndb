@@ -33,10 +33,10 @@ chmod +x "$tmp/bin/gh"
 export PATH="$tmp/bin:$PATH" STUB_RELEASE="$tmp/rel" CHECK_RETRY_SLEEP=0
 mkdir -p "$tmp/rel"
 
-all="vdb-darwin-arm64 vdb-darwin-amd64 vdb-linux-arm64 vdb-linux-amd64 vdb-windows-amd64.exe vectoradb-docker-context.tar.gz"
+all="odb-darwin-arm64 odb-darwin-amd64 odb-linux-arm64 odb-linux-amd64 odb-windows-amd64.exe oxyndb-docker-context.tar.gz"
 sum="$(printf 'a%.0s' $(seq 64))"
 publish() { # publish "<attached names>" "<listed names>"
-	printf '%s\n' $1 SHA256SUMS vdb-verify-linux-amd64 > "$tmp/rel/assets"
+	printf '%s\n' $1 SHA256SUMS odb-verify-linux-amd64 > "$tmp/rel/assets"
 	: > "$tmp/rel/SHA256SUMS"
 	for n in $2; do printf '%s  %s\n' "$sum" "$n" >> "$tmp/rel/SHA256SUMS"; done
 }
@@ -47,17 +47,17 @@ expect() { # expect <description> <exit code> [text in output]
 }
 
 publish "$all" "$all"
-expect "a complete release passes" 0 "every file vdb update needs"
+expect "a complete release passes" 0 "every file odb update needs"
 
-publish "${all/vdb-linux-arm64 /}" "$all"
-expect "a missing attachment fails" 1 "missing vdb-linux-arm64"
+publish "${all/odb-linux-arm64 /}" "$all"
+expect "a missing attachment fails" 1 "missing odb-linux-arm64"
 
-publish "$all" "${all/vdb-windows-amd64.exe /}"
-expect "an unlisted checksum fails" 1 "doesn't list vdb-windows-amd64.exe"
+publish "$all" "${all/odb-windows-amd64.exe /}"
+expect "an unlisted checksum fails" 1 "doesn't list odb-windows-amd64.exe"
 
 publish "$all" "$all"
-sed -i.bak 's/  vdb-darwin-arm64$/ *vdb-darwin-arm64/' "$tmp/rel/SHA256SUMS"
-printf '%s  vdb-linux-amd64\r\n' "$sum" >> "$tmp/rel/SHA256SUMS"
+sed -i.bak 's/  odb-darwin-arm64$/ *odb-darwin-arm64/' "$tmp/rel/SHA256SUMS"
+printf '%s  odb-linux-amd64\r\n' "$sum" >> "$tmp/rel/SHA256SUMS"
 expect "binary-mode and CRLF lines count as listed" 0
 
 publish "$all" "$all"

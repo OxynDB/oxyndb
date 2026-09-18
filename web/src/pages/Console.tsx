@@ -17,19 +17,19 @@ FROM information_schema.tables
 WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
 ORDER BY table_schema, table_type DESC, table_name`
 
-// VectoraDB keeps its own bookkeeping (Blackbox, policies, agent sessions) in
-// the vdb schema of every branch. It is not the user's data, so it is hidden
+// OxynDB keeps its own bookkeeping (Blackbox, policies, agent sessions) in
+// the odb schema of every branch. It is not the user's data, so it is hidden
 // whenever the console opens and shown only on request.
-const isSystem = (o: DbObject) => o.schema === 'vdb' || o.schema.startsWith('vdb_')
+const isSystem = (o: DbObject) => o.schema === 'odb' || o.schema.startsWith('odb_')
 
 // Statements that can add, remove or rename tables, so the schema list is
 // refreshed after they run.
 const DDL = /\b(create|drop|alter|truncate|rename|import\s+foreign)\b/i
 // Two different refusals, overridden differently (docs/policy-errors.md): the
-// guardrail on DROP TABLE / DROP SCHEMA (vdb.allow_destructive) and a Blackbox
-// policy rule, SQLSTATE VDB01 (vdb.policy_allow, per rule).
-const GUARDRAIL = /VectoraDB guardrail: .* is blocked by policy/
-const POLICY_RULE = /VDB01/
+// guardrail on DROP TABLE / DROP SCHEMA (odb.allow_destructive) and a Blackbox
+// policy rule, SQLSTATE ODB01 (odb.policy_allow, per rule).
+const GUARDRAIL = /OxynDB guardrail: .* is blocked by policy/
+const POLICY_RULE = /ODB01/
 const ruleOf = (err: string) => /\(rule ([a-z0-9][a-z0-9-]*)\)/.exec(err)?.[1]
 
 export default function Console() {
@@ -151,7 +151,7 @@ export default function Console() {
     return (
       <>
         <h1>SQL Console</h1>
-        <div className="offline">Can’t reach the API at <code>{API}</code>. Start it with <code>vdb start</code>.</div>
+        <div className="offline">Can’t reach the API at <code>{API}</code>. Start it with <code>odb start</code>.</div>
       </>
     )
   }
@@ -212,13 +212,13 @@ export default function Console() {
             {views.map(item)}
             {showSystem && system.length > 0 && (
               <>
-                <div className="obj-group">VectoraDB system</div>
+                <div className="obj-group">OxynDB system</div>
                 {system.map(item)}
               </>
             )}
             {system.length > 0 && (
               <button className="obj-show-system" onClick={() => setShowSystem(v => !v)} aria-expanded={showSystem}
-                title="Blackbox, policies and agent sessions — kept by VectoraDB, not your data">
+                title="Blackbox, policies and agent sessions — kept by OxynDB, not your data">
                 {showSystem ? 'Hide system tables' : `Show system tables (${system.length})`}
               </button>
             )}
@@ -269,7 +269,7 @@ export default function Console() {
                       <b>{blockedRule ? <>Blocked by policy rule <code>{blockedRule}</code>.</> : 'Blocked by the guardrail.'}</b> Only admins of <code>{branch}</code> can override it
                       {admins && <> — you’re signed in as <code>{admins.you}</code></>}. Ask an admin to grant you on
                       the <Link to="/policies">Policies</Link> page, or run{' '}
-                      <code>vdb admin grant {admins?.you || '<email>'} --branch {branch}</code>.
+                      <code>odb admin grant {admins?.you || '<email>'} --branch {branch}</code>.
                     </div>
                   )}
                 </div>

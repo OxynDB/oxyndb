@@ -31,14 +31,14 @@ function PublicLayout() {
   return (
     <>
       <header className="nav">
-        <Link to="/" className="brand"><Mark /> Vectora<span>DB</span></Link>
+        <Link to="/" className="brand"><Mark /> Oxyn<span>DB</span></Link>
         <div className="links">
           <NavLink to="/" end>Home</NavLink>
           <NavLink to="/guide">Guide</NavLink>
           <NavLink to="/docs">Docs</NavLink>
         </div>
         <div className="right">
-          <a href="https://github.com/vectoradb/vectoraDB" target="_blank" rel="noreferrer" className="muted" style={{ fontSize: 13 }}>GitHub ↗</a>
+          <a href="https://github.com/oxyndb/oxynDB" target="_blank" rel="noreferrer" className="muted" style={{ fontSize: 13 }}>GitHub ↗</a>
           {user
             ? <Link to="/dashboard" className="btn ghost" style={{ padding: '6px 12px' }}>Open dashboard →</Link>
             : <NavLink to="/login" className="btn ghost" style={{ padding: '6px 12px' }}>Log in</NavLink>}
@@ -48,7 +48,7 @@ function PublicLayout() {
       <main className="container"><Outlet /></main>
       <footer className="container" style={{ paddingTop: 0, paddingBottom: 0 }}>
         <div className="footer">
-          <Link to="/" className="brand"><Mark size={20} /> Vectora<span>DB</span></Link>
+          <Link to="/" className="brand"><Mark size={20} /> Oxyn<span>DB</span></Link>
           <span className="muted">Serverless Postgres · branches · time-travel · agent DBs</span>
           <span style={{ marginLeft: 'auto' }} className="muted">Open source — AGPL-3.0 core · Apache-2.0 clients</span>
         </div>

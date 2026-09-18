@@ -1,8 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-# VectoraDB over MCP
+# OxynDB over MCP
 
-`vdb mcp` speaks the [Model Context Protocol](https://modelcontextprotocol.io) on
+`odb mcp` speaks the [Model Context Protocol](https://modelcontextprotocol.io) on
 stdio, so an agent framework can get its own disposable Postgres database, run
 SQL, see exactly what it changed, and throw the database away — through one
 standard interface, with no HTTP client to write.
@@ -13,23 +13,23 @@ corrupt the session.
 
 ## Point a client at it
 
-Most clients take a command and arguments. The command is `vdb`, the argument is
+Most clients take a command and arguments. The command is `odb`, the argument is
 `mcp`:
 
 ```json
 {
   "mcpServers": {
-    "vectoradb": {
-      "command": "vdb",
+    "oxyndb": {
+      "command": "odb",
       "args": ["mcp"],
-      "env": { "VECTORADB_API_KEY": "vdb_…" }
+      "env": { "OXYNDB_API_KEY": "odb_…" }
     }
   }
 }
 ```
 
-`vdb` must be on the client's `PATH` (the installer puts it there) and
-VectoraDB must be running — `vdb start` — because the tools talk to the same
+`odb` must be on the client's `PATH` (the installer puts it there) and
+OxynDB must be running — `odb start` — because the tools talk to the same
 engine the CLI does.
 
 The key is required: these tools create databases, run SQL and branch `main`,
@@ -37,10 +37,10 @@ and every change is recorded against the account the key belongs to. Make one
 with
 
 ```
-vdb apikey create you@example.com mcp
+odb apikey create you@example.com mcp
 ```
 
-and put it in the `env` block above (`--key <vdb_…>` also works, but a key on
+and put it in the `env` block above (`--key <odb_…>` also works, but a key on
 the command line is visible in the process list). Started without one, the
 server prints these instructions and exits rather than serving unauthenticated.
 
@@ -50,7 +50,7 @@ branch is refused, and `create_branch`, `delete_branch`, `list_branches`,
 `blackbox_diff` and `branch_before_change` are refused outright, since each
 reaches past a single branch. An account key behaves as it always did.
 
-On macOS and Windows the engine runs inside a VM or WSL distro, and `vdb mcp`
+On macOS and Windows the engine runs inside a VM or WSL distro, and `odb mcp`
 forwards into it automatically, so the config above is identical on every
 platform.
 
@@ -59,7 +59,7 @@ Check it by hand before wiring up a client:
 ```sh
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
-  '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | vdb mcp
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | odb mcp
 ```
 
 You should get two JSON lines back: the server's capabilities, then the tools.
@@ -117,20 +117,20 @@ and it does not return the policy verdict.
   can read the key, and the process itself runs with the privileges of the user
   who started it.
 - **No superuser by default.** `run_sql` connects as the non-superuser
-  `vdbclient` role, so an agent cannot disable triggers or override the
-  destructive-DDL guardrail. `VECTORADB_MCP_SUPERUSER=1` restores the old
-  superuser behaviour (and `VECTORADB_AGENT_SUPERUSER=1` does the same for agent
+  `odbclient` role, so an agent cannot disable triggers or override the
+  destructive-DDL guardrail. `OXYNDB_MCP_SUPERUSER=1` restores the old
+  superuser behaviour (and `OXYNDB_AGENT_SUPERUSER=1` does the same for agent
   branches created over the HTTP API) — only for compatibility with setups that
   depended on it.
 - **`branch_before_change` takes minutes, not seconds.** It restores a base
   backup and replays WAL, and it needs a base backup taken before the change
-  (`vdb backup create`).
+  (`odb backup create`).
 
 ## See also
 
 - `docs/policy-errors.md` — the machine-readable contract behind `policy_check`
-  and blocked changes (`VDB01`, `VDB02`).
+  and blocked changes (`ODB01`, `ODB02`).
 - `docs/ledger-anchor-format.md` — the anchor format `ledger_integrity` checks
-  against, and what `vdb-verify` reads.
+  against, and what `odb-verify` reads.
 - The REST API (`GET /api/openapi.yaml` from a running engine) for the same
   operations over HTTP.

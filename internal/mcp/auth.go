@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vectoradb/vectoradb/internal/auth"
+	"github.com/oxyndb/oxyndb/internal/auth"
 )
 
 // Authentication for the MCP server.
@@ -38,12 +38,12 @@ var ErrNoKey = errors.New("no API key")
 
 // KeyHelp is printed when the key is missing or rejected. stdout carries the
 // MCP protocol, so this goes to stderr.
-const KeyHelp = `vdb mcp needs an API key: its tools create databases, run SQL and branch main,
+const KeyHelp = `odb mcp needs an API key: its tools create databases, run SQL and branch main,
 and every change is recorded against the account the key belongs to.
 
-  vdb apikey create you@example.com mcp
+  odb apikey create you@example.com mcp
 
-Then give it to the MCP server as VECTORADB_API_KEY (or --key) -- in a client
+Then give it to the MCP server as OXYNDB_API_KEY (or --key) -- in a client
 config that is the "env" block next to "command". A key scoped to one branch
 limits the server to that branch.`
 

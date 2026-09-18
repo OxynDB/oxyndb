@@ -26,11 +26,11 @@ import (
 //
 // So Windows uses btrfs and macOS/Linux keep ZFS, which is proven there and
 // where the module is a solved problem. The launcher selects the driver with
-// VECTORADB_STORAGE; the default is ZFS, so nothing changes for an existing
+// OXYNDB_STORAGE; the default is ZFS, so nothing changes for an existing
 // install that does not ask for otherwise.
 
 // envStorage selects the driver. "zfs" (default) or "btrfs".
-const envStorage = "VECTORADB_STORAGE"
+const envStorage = "OXYNDB_STORAGE"
 
 // branchUsage is one branch's space accounting: used is what the branch costs
 // on top of what it shares, refer is what it appears to contain.
@@ -94,8 +94,8 @@ func activeStorage() storage {
 // one branch can grow.
 
 const (
-	envBranchRefquota  = "VECTORADB_BRANCH_REFQUOTA"  // cap a branch's referenced space (e.g. "20G"); unset = uncapped
-	envMainReservation = "VECTORADB_MAIN_RESERVATION" // guarantee main this much writable space
+	envBranchRefquota  = "OXYNDB_BRANCH_REFQUOTA"  // cap a branch's referenced space (e.g. "20G"); unset = uncapped
+	envMainReservation = "OXYNDB_MAIN_RESERVATION" // guarantee main this much writable space
 	defaultMainReserve = "2G"
 )
 
@@ -282,7 +282,7 @@ func (btrfsStorage) name() string { return "btrfs" }
 // mounted. Branches are subvolumes inside it, so a branch's data directory is
 // mountBase/<name> exactly as with ZFS.
 const (
-	btrfsImage = "/var/lib/vectoradb-btrfs.img"
+	btrfsImage = "/var/lib/oxyndb-btrfs.img"
 	btrfsMount = mountBase
 )
 
@@ -302,7 +302,7 @@ func (b btrfsStorage) ensureReady() error {
 		if err := run("truncate", "-s", size, btrfsImage); err != nil {
 			return fmt.Errorf("creating the storage image: %w", err)
 		}
-		if err := run("mkfs.btrfs", "-q", "-L", "vectoradb", btrfsImage); err != nil {
+		if err := run("mkfs.btrfs", "-q", "-L", "oxyndb", btrfsImage); err != nil {
 			return fmt.Errorf("formatting the storage image: %w", err)
 		}
 	}

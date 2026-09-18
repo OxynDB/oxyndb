@@ -1,8 +1,8 @@
-# VectoraDB clients & SDKs
+# OxynDB clients & SDKs
 
 Everything in this directory is licensed **Apache-2.0** (see `clients/LICENSE`),
 so applications can link and redistribute the client libraries freely. The
-server/core of VectoraDB is licensed AGPL-3.0-or-later (see the repository-root
+server/core of OxynDB is licensed AGPL-3.0-or-later (see the repository-root
 `LICENSE`).
 
 ## SDKs
@@ -26,8 +26,8 @@ openapi-generator-cli generate -i openapi.yaml -g go -o clients/go
 ## Get a branch in three lines (Python)
 
 ```python
-from vectoradb import VectoraDB
-db = VectoraDB(api_key="vdb_…", verify_tls=False)   # local self-signed cert
+from oxyndb import OxynDB
+db = OxynDB(api_key="odb_…", verify_tls=False)   # local self-signed cert
 db.create_branch("qa")
 print(db.query("qa", "select 1"))
 ```

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vectoradb/vectoradb/internal/ledger"
+	"github.com/oxyndb/oxyndb/internal/ledger"
 )
 
 func TestValidatePolicyRule(t *testing.T) {
@@ -33,7 +33,7 @@ func TestPolicyRuleSQL(t *testing.T) {
 	p, h := `o'rders\s`, ""
 	q := addRuleSQL(PolicyRule{RuleID: "r1", CommandTag: "DROP INDEX", Pattern: &p, Hint: &h, Action: "warn", Reason: "it's risky"}, "a@x.com")
 	for _, want := range []string{
-		"set_config('vdb.actor', 'a@x.com', true)",
+		"set_config('odb.actor', 'a@x.com', true)",
 		`'o''rders\s'`, // quoted, backslash kept
 		"'it''s risky'",
 		"ON CONFLICT (rule_id) DO NOTHING",
@@ -50,7 +50,7 @@ func TestPolicyRuleSQL(t *testing.T) {
 	block, on := "block", false
 	q = updateRuleSQL("drop-column", &block, nil, "")
 	if !strings.Contains(q, "coalesce('block', action)") || !strings.Contains(q, "coalesce(NULL::boolean, enabled)") ||
-		!strings.Contains(q, "set_config('vdb.actor', 'vdb', true)") {
+		!strings.Contains(q, "set_config('odb.actor', 'odb', true)") {
 		t.Errorf("update SQL:\n%s", q)
 	}
 	q = updateRuleSQL("drop-column", nil, &on, "cli")
@@ -68,8 +68,8 @@ func TestFriendlyPolicyErr(t *testing.T) {
 	if !errors.Is(err, ErrInvalidRequest) || !strings.Contains(err.Error(), "invalid pattern") {
 		t.Errorf("pattern error: %v", err)
 	}
-	err = friendlyPolicyErr("qa", errors.New(`ERROR:  relation "vdb.policy_rules" does not exist`))
-	if !strings.Contains(err.Error(), "vdb blackbox upgrade qa") {
+	err = friendlyPolicyErr("qa", errors.New(`ERROR:  relation "odb.policy_rules" does not exist`))
+	if !strings.Contains(err.Error(), "odb blackbox upgrade qa") {
 		t.Errorf("not installed: %v", err)
 	}
 	other := errors.New("boom")

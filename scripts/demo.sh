@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Narrated feature tour of VectoraDB. Run inside the Linux dev VM:
+# Narrated feature tour of OxynDB. Run inside the Linux dev VM:
 #   lima bash "/Users/.../Distributed Database/scripts/demo.sh"
 set -uo pipefail
 
-S="${VECTORADB_BIN:-/tmp/vdb}"
-GATEWAY="postgres://vectoradb@127.0.0.1:6432" # auth via an API key in PGPASSWORD
+S="${OXYNDB_BIN:-/tmp/odb}"
+GATEWAY="postgres://oxyndb@127.0.0.1:6432" # auth via an API key in PGPASSWORD
 say() { echo; echo "──▶ $*"; echo; }
 sql() { psql "$GATEWAY/$1" -c "$2"; }
-pg()  { sudo docker exec -e PGPASSWORD=vectoradb "$1" psql -U vectoradb -d vectoradb "${@:2}"; }
+pg()  { sudo docker exec -e PGPASSWORD=oxyndb "$1" psql -U oxyndb -d oxyndb "${@:2}"; }
 
-say "Bringing VectoraDB up (stack + gateway + control API + agent API)"
+say "Bringing OxynDB up (stack + gateway + control API + agent API)"
 $S start >/dev/null 2>&1; sleep 4
 $S status 2>&1 | sed -n '1,12p'
 
 # The Gateway requires an API key as the password — mint one and use it for psql.
-printf 'demo\n' | $S user create demo@vectoradb.dev >/dev/null 2>&1 || true
-export PGPASSWORD="$($S apikey create demo@vectoradb.dev demo 2>/dev/null | grep -o 'vdb_[A-Za-z0-9_-]*')"
+printf 'demo\n' | $S user create demo@oxyndb.dev >/dev/null 2>&1 || true
+export PGPASSWORD="$($S apikey create demo@oxyndb.dev demo 2>/dev/null | grep -o 'odb_[A-Za-z0-9_-]*')"
 
 say "Create an instant copy-on-write branch 'demo' (note the time)"
 $S branch delete demo >/dev/null 2>&1
@@ -30,7 +30,7 @@ sql demo "UPDATE notes SET body='edited' WHERE id=1;"
 sql demo "SELECT * FROM notes ORDER BY id;"
 
 say "Isolation — 'main' does NOT have that table"
-pg vec-main -c "SELECT to_regclass('public.notes') AS notes_on_main;"
+pg oxyn-main -c "SELECT to_regclass('public.notes') AS notes_on_main;"
 
 say "Copy-on-write: the branch stores only its delta (USED column)"
 $S branch list
@@ -39,9 +39,9 @@ say "A database per AI agent, over HTTP"
 curl -s -X POST localhost:8088/agents/alice/branch; echo
 
 say "High availability — provision a streaming standby"
-pg vec-main -c "CREATE TABLE IF NOT EXISTS ledger(n int);"
+pg oxyn-main -c "CREATE TABLE IF NOT EXISTS ledger(n int);"
 $S ha enable >/dev/null 2>&1; sleep 2
-pg vec-main -x -c "SELECT application_name, state, sync_state FROM pg_stat_replication;"
+pg oxyn-main -x -c "SELECT application_name, state, sync_state FROM pg_stat_replication;"
 
 say "Fail over — the SAME endpoint keeps working (write lands on the promoted standby)"
 $S ha failover >/dev/null 2>&1; sleep 3

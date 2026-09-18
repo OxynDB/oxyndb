@@ -1,6 +1,6 @@
 # Binaries
 /bin/
-/vectoradb
+/oxyndb
 *.exe
 
 # Go

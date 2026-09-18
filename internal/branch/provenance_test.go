@@ -71,9 +71,9 @@ func TestProvenanceSQL(t *testing.T) {
 	}
 	d := sessionDefaultsSQL(Provenance{SessionID: "s1", TaskID: "t'1"})
 	for _, want := range []string{
-		"ALTER DATABASE vectoradb SET vdb.session = 's1';",
-		"ALTER DATABASE vectoradb SET vdb.task = 't''1';",
-		"ALTER DATABASE vectoradb RESET vdb.parent_session;",
+		"ALTER DATABASE oxyndb SET odb.session = 's1';",
+		"ALTER DATABASE oxyndb SET odb.task = 't''1';",
+		"ALTER DATABASE oxyndb RESET odb.parent_session;",
 	} {
 		if !strings.Contains(d, want) {
 			t.Errorf("defaults SQL lost %q:\n%s", want, d)
@@ -83,11 +83,11 @@ func TestProvenanceSQL(t *testing.T) {
 
 func TestClassifyExecError(t *testing.T) {
 	var res ExecuteChangeResult
-	detail := `{"v":1,"rule_id":"drop-column","action":"block","command":"ALTER TABLE","matched":null,"reason":"r","hint":"h","override":"vdb_admin","evaluation_id":3,"blackbox_id":9,"impact":null}`
-	if err := classifyExecError(&res, &pgconn.PgError{Code: "VDB01", Message: "Blackbox policy: r (rule drop-column)", Detail: detail}); err != nil {
+	detail := `{"v":1,"rule_id":"drop-column","action":"block","command":"ALTER TABLE","matched":null,"reason":"r","hint":"h","override":"odb_admin","evaluation_id":3,"blackbox_id":9,"impact":null}`
+	if err := classifyExecError(&res, &pgconn.PgError{Code: "ODB01", Message: "Blackbox policy: r (rule drop-column)", Detail: detail}); err != nil {
 		t.Fatal(err)
 	}
-	if res.Status != "blocked" || res.Policy == nil || res.Policy.RuleID != "drop-column" || *res.Policy.BlackboxID != 9 || res.Error.Code != "VDB01" {
+	if res.Status != "blocked" || res.Policy == nil || res.Policy.RuleID != "drop-column" || *res.Policy.BlackboxID != 9 || res.Error.Code != "ODB01" {
 		t.Fatalf("blocked: %+v", res)
 	}
 	res = ExecuteChangeResult{}
@@ -102,7 +102,7 @@ func TestClassifyExecError(t *testing.T) {
 		t.Error("a non-database error must be returned")
 	}
 
-	n := noticeFrom(&pgconn.Notice{Severity: "NOTICE", Code: "VDB02", Message: "Blackbox policy warning: r (rule drop-index)",
+	n := noticeFrom(&pgconn.Notice{Severity: "NOTICE", Code: "ODB02", Message: "Blackbox policy warning: r (rule drop-index)",
 		Detail: `{"v":1,"rule_id":"drop-index","action":"warn","command":"DROP INDEX","reason":"r","hint":"h"}`})
 	if n.Policy == nil || n.Policy.RuleID != "drop-index" {
 		t.Errorf("warning notice: %+v", n)

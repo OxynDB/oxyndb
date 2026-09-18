@@ -9,13 +9,13 @@ import (
 	"strings"
 )
 
-// Least-privilege access for agents and the MCP server, and the vdb_admin role
+// Least-privilege access for agents and the MCP server, and the odb_admin role
 // that alone may override the destructive-DDL guardrail.
 //
 // Agent branches used to hand out the superuser's DSN, and MCP run_sql ran as the
 // superuser, so an agent could switch off the guardrail or the ledger's
 // append-only triggers. Both now use non-superuser login roles.
-// VECTORADB_AGENT_SUPERUSER=1 and VECTORADB_MCP_SUPERUSER=1 restore the previous
+// OXYNDB_AGENT_SUPERUSER=1 and OXYNDB_MCP_SUPERUSER=1 restore the previous
 // behaviour for setups that depend on it (e.g. an agent running CREATE EXTENSION).
 
 // truthyEnv reports whether an environment variable is set to a true value.
@@ -28,29 +28,29 @@ func truthyEnv(key string) bool {
 }
 
 // AgentSuperuser reports whether agent branches get the legacy superuser DSN.
-func AgentSuperuser() bool { return truthyEnv("VECTORADB_AGENT_SUPERUSER") }
+func AgentSuperuser() bool { return truthyEnv("OXYNDB_AGENT_SUPERUSER") }
 
 // MCPSuperuser reports whether MCP run_sql runs as the legacy superuser.
-func MCPSuperuser() bool { return truthyEnv("VECTORADB_MCP_SUPERUSER") }
+func MCPSuperuser() bool { return truthyEnv("OXYNDB_MCP_SUPERUSER") }
 
 // ensureLoginRole creates (or updates) a non-superuser login role on a branch with
 // its own password. It has the same shape as the gateway's per-user roles
-// (EnsureUserRole): a member of vdbclient that acts as vdbclient by default, so
+// (EnsureUserRole): a member of odbclient that acts as odbclient by default, so
 // data access and object ownership match every other client.
 func ensureLoginRole(branchName, role, password string) error {
 	sql := fmt.Sprintf(`DO $do$
 DECLARE r text := %s;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
-    EXECUTE format('CREATE ROLE %%I LOGIN NOSUPERUSER NOCREATEROLE NOCREATEDB NOBYPASSRLS INHERIT IN ROLE vdbclient', r);
+    EXECUTE format('CREATE ROLE %%I LOGIN NOSUPERUSER NOCREATEROLE NOCREATEDB NOBYPASSRLS INHERIT IN ROLE odbclient', r);
   END IF;
   EXECUTE format('ALTER ROLE %%I WITH LOGIN NOSUPERUSER PASSWORD %%L', r, %s);
-  EXECUTE format('ALTER ROLE %%I SET role = vdbclient', r);
+  EXECUTE format('ALTER ROLE %%I SET role = odbclient', r);
 END $do$;`, quoteLiteral(role), quoteLiteral(password))
 	return psqlStdin(branchName, sql)
 }
 
-// ClientQueryText runs SQL on a branch as the non-superuser vdbclient role and
+// ClientQueryText runs SQL on a branch as the non-superuser odbclient role and
 // returns psql's rendered output; on failure the returned string is psql's error.
 // tool becomes the session's application_name. On a non-agent branch the change
 // is attributed to tool as an agent; agent branches keep their per-database agent
@@ -74,10 +74,10 @@ func ClientQueryTextAs(branchName, sql, tool, actor string) (string, error) {
 	if !strings.HasPrefix(branchName, "agent-") {
 		// An agent branch carries its actor and session as database defaults
 		// (sessionDefaultsSQL), so injecting here would override them.
-		args = append(args, "-e", fmt.Sprintf("PGOPTIONS=-c vdb.actor=%s -c vdb.actor_kind=agent", actor))
+		args = append(args, "-e", fmt.Sprintf("PGOPTIONS=-c odb.actor=%s -c odb.actor_kind=agent", actor))
 	}
 	args = append(args, container(branchName),
-		"psql", "-U", "vdbclient", "-d", pgDatabase, "-P", "pager=off", "-c", sql)
+		"psql", "-U", "odbclient", "-d", pgDatabase, "-P", "pager=off", "-c", sql)
 	out, err := captureCombined(args[0], args[1:]...)
 	if err != nil {
 		return out, fmt.Errorf("%s", out)
@@ -85,7 +85,7 @@ func ClientQueryTextAs(branchName, sql, tool, actor string) (string, error) {
 	return out, nil
 }
 
-// GrantAdmin makes email's per-user role a member of vdb_admin on a branch, so
+// GrantAdmin makes email's per-user role a member of odb_admin on a branch, so
 // that user may override the destructive-DDL guardrail there.
 func GrantAdmin(branchName, email string) error {
 	if err := EnsureUserRole(branchName, email); err != nil {
@@ -93,29 +93,29 @@ func GrantAdmin(branchName, email string) error {
 	}
 	return psqlStdin(branchName, fmt.Sprintf(`DO $do$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vdb_admin') THEN
-    CREATE ROLE vdb_admin NOLOGIN;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'odb_admin') THEN
+    CREATE ROLE odb_admin NOLOGIN;
   END IF;
-  EXECUTE format('GRANT vdb_admin TO %%I', %s);
+  EXECUTE format('GRANT odb_admin TO %%I', %s);
 END $do$;`, quoteLiteral(email)))
 }
 
-// RevokeAdmin removes email's per-user role from vdb_admin on a branch.
+// RevokeAdmin removes email's per-user role from odb_admin on a branch.
 func RevokeAdmin(branchName, email string) error {
 	return psqlStdin(branchName, fmt.Sprintf(`DO $do$
 BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vdb_admin')
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'odb_admin')
      AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = %[1]s) THEN
-    EXECUTE format('REVOKE vdb_admin FROM %%I', %[1]s);
+    EXECUTE format('REVOKE odb_admin FROM %%I', %[1]s);
   END IF;
 END $do$;`, quoteLiteral(email)))
 }
 
-// ListAdmins returns the roles that are members of vdb_admin on a branch.
+// ListAdmins returns the roles that are members of odb_admin on a branch.
 func ListAdmins(branchName string) ([]string, error) {
 	out, err := Query(branchName, `SELECT r.rolname FROM pg_auth_members m
   JOIN pg_roles r ON r.oid = m.member
-  WHERE m.roleid = (SELECT oid FROM pg_roles WHERE rolname = 'vdb_admin')
+  WHERE m.roleid = (SELECT oid FROM pg_roles WHERE rolname = 'odb_admin')
   ORDER BY 1`)
 	if err != nil {
 		return nil, fmt.Errorf("listing admins on %q: %w", branchName, err)
@@ -127,13 +127,13 @@ func ListAdmins(branchName string) ([]string, error) {
 // disposable restore target and the read-only HA standby (roles and the ledger
 // can't be changed there).
 func RunningBranches() ([]string, error) {
-	out, err := capture("docker", "ps", "--filter", "name=vec-", "--format", "{{.Names}}")
+	out, err := capture("docker", "ps", "--filter", "name=oxyn-", "--format", "{{.Names}}")
 	if err != nil {
 		return nil, err
 	}
 	var names []string
 	for _, n := range strings.Fields(out) {
-		bn := strings.TrimPrefix(n, "vec-")
+		bn := strings.TrimPrefix(n, "oxyn-")
 		if bn == n || bn == "restore" || bn == "standby" {
 			continue
 		}

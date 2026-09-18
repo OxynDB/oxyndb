@@ -9,7 +9,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/vectoradb/vectoradb/internal/ledger"
+	"github.com/oxyndb/oxyndb/internal/ledger"
 )
 
 // Blackbox diff: which schema changes distinguish two branches. A branch is a

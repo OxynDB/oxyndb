@@ -63,7 +63,7 @@ function currentPage(path: string) {
 
 // The collapsed/expanded choice is a per-browser convenience; storage may be
 // unavailable (private windows), in which case the sidebar starts expanded.
-const COLLAPSED_KEY = 'vdb.sidebar.collapsed'
+const COLLAPSED_KEY = 'odb.sidebar.collapsed'
 function readCollapsed() {
   try { return localStorage.getItem(COLLAPSED_KEY) === '1' } catch { return false }
 }
@@ -102,9 +102,9 @@ export default function AppLayout() {
     <div className={'app-shell' + (collapsed ? ' collapsed' : '')}>
       <aside id="app-sidebar" className={'sidebar' + (drawerOpen ? ' open' : '')} aria-label="Main navigation">
         <div className="sb-head">
-          <Link to="/dashboard" className="brand" title="VectoraDB">
+          <Link to="/dashboard" className="brand" title="OxynDB">
             <Mark size={24} />
-            <b className="sb-text">Vectora<span>DB</span></b>
+            <b className="sb-text">Oxyn<span>DB</span></b>
           </Link>
           <button className="icon-btn sb-close" aria-label="Close menu" onClick={() => setDrawerOpen(false)}>
             <I.IconClose />
@@ -131,7 +131,7 @@ export default function AppLayout() {
         </nav>
 
         <div className="sb-foot">
-          <a className="sb-link" href="https://github.com/vectoradb/vectoraDB" target="_blank" rel="noreferrer" title={tip('GitHub')}>
+          <a className="sb-link" href="https://github.com/oxyndb/oxynDB" target="_blank" rel="noreferrer" title={tip('GitHub')}>
             <I.IconExternal className="sb-icon" />
             <span className="sb-text">GitHub</span>
           </a>

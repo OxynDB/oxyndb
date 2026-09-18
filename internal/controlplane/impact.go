@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/vectoradb/vectoradb/internal/branch"
+	"github.com/oxyndb/oxyndb/internal/branch"
 )
 
 // registerImpact mounts Blackbox impact analysis and diff (behind auth):

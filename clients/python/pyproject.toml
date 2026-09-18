@@ -3,14 +3,14 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "vectoradb"
+name = "oxyndb"
 version = "0.6.0"
-description = "Python client for VectoraDB — serverless Postgres with instant branching and Blackbox, a tamper-evident record of every schema change."
+description = "Python client for OxynDB — serverless Postgres with instant branching and Blackbox, a tamper-evident record of every schema change."
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "Apache-2.0" }
-authors = [{ name = "VectoraDB" }]
-urls = { Homepage = "https://github.com/vectoradb/vectoraDB" }
+authors = [{ name = "OxynDB" }]
+urls = { Homepage = "https://github.com/oxyndb/oxynDB" }
 
 [tool.setuptools]
-packages = ["vectoradb"]
+packages = ["oxyndb"]

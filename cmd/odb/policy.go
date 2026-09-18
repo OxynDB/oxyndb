@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/vectoradb/vectoradb/internal/branch"
+	"github.com/oxyndb/oxyndb/internal/branch"
 )
 
-// policyCmd handles `vdb policy …`, the Blackbox policy gate: rules checked on
+// policyCmd handles `odb policy …`, the Blackbox policy gate: rules checked on
 // every schema change before it runs (docs/policy-errors.md). Rules live in each
 // branch's database; --branch picks one (default main, which new branches copy).
 func policyCmd(args []string) {
@@ -24,7 +24,7 @@ func policyCmd(args []string) {
 		name = "main"
 	}
 	arg := firstPositional(args, "--branch", "--command", "--pattern", "--reason", "--hint", "--limit")
-	const actor = "vdb-cli"
+	const actor = "odb-cli"
 	needArg := func() {
 		if arg == "" {
 			policyUsage()
@@ -98,10 +98,10 @@ func policyCmd(args []string) {
 
 func policyUsage() {
 	fmt.Println(`usage:
-  vdb policy [list] [--branch <name>]
-  vdb policy check "<SQL>" [--branch <name>]
-  vdb policy block|warn|enable|disable|remove <rule> [--branch <name>]
-  vdb policy add <rule> --command "ALTER TABLE" [--pattern <regex>] [--block] --reason "<why>" [--hint "<next step>"] [--branch <name>]
-  vdb policy evaluations [--limit N] [--branch <name>]`)
+  odb policy [list] [--branch <name>]
+  odb policy check "<SQL>" [--branch <name>]
+  odb policy block|warn|enable|disable|remove <rule> [--branch <name>]
+  odb policy add <rule> --command "ALTER TABLE" [--pattern <regex>] [--block] --reason "<why>" [--hint "<next step>"] [--branch <name>]
+  odb policy evaluations [--limit N] [--branch <name>]`)
 	os.Exit(2)
 }

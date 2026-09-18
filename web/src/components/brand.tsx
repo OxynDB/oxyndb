@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { getTheme, toggleTheme } from '../theme'
 
-// The VectoraDB mark: a branch splitting in two.
+// The OxynDB mark: a branch splitting in two.
 export function Mark({ size = 26 }: { size?: number }) {
   return (
     <svg className="mark" width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden>

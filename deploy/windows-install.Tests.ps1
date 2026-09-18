@@ -10,12 +10,12 @@
 # Run:  Invoke-Pester deploy/windows-install.Tests.ps1
 #
 # Tests that would create a distro or download hundreds of megabytes are tagged
-# 'E2E' and skipped unless VDB_TEST_E2E is set:
-#   $env:VDB_TEST_E2E=1; Invoke-Pester deploy/windows-install.Tests.ps1
+# 'E2E' and skipped unless ODB_TEST_E2E is set:
+#   $env:ODB_TEST_E2E=1; Invoke-Pester deploy/windows-install.Tests.ps1
 
 BeforeAll {
     $script:Installer = "$PSScriptRoot/install.ps1"
-    $script:E2E = [bool]$env:VDB_TEST_E2E
+    $script:E2E = [bool]$env:ODB_TEST_E2E
 }
 
 # The encoding is a genuine two-sided constraint, and getting it wrong broke real
@@ -49,7 +49,7 @@ Describe 'installer encoding' {
 
 # The installer must not need WSL. Choosing the ZFS bundle by asking a running
 # distro for `uname -r` is what forced users to install WSL and Ubuntu by hand,
-# reboot, and re-run the installer -- and left a vdb.exe that could not set
+# reboot, and re-run the installer -- and left a odb.exe that could not set
 # itself up when they did not.
 Describe 'installer does not depend on WSL' {
     BeforeAll { . $Installer }
@@ -70,7 +70,7 @@ Describe 'installer does not depend on WSL' {
         # the failed fetch prints a warning that reads like a broken install --
         # which is exactly what users reported seeing.
         $src = Get-Content $Installer -Raw
-        $src | Should -Not -Match 'vectoradb-zfs'
+        $src | Should -Not -Match 'oxyndb-zfs'
         $src | Should -Not -Match 'downloads Docker and ZFS'
     }
 
@@ -101,9 +101,9 @@ Describe 'installer behaviour' {
     }
 
     It 'builds a latest asset URL over HTTPS' {
-        $u = Get-VdbAsset 'vdb-windows-amd64.exe'
+        $u = Get-OdbAsset 'odb-windows-amd64.exe'
         $u | Should -BeLike 'https://*'
-        $u | Should -Be 'https://github.com/vectoradb/vectoraDB/releases/latest/download/vdb-windows-amd64.exe'
+        $u | Should -Be 'https://github.com/oxyndb/oxynDB/releases/latest/download/odb-windows-amd64.exe'
     }
 
     It 'never downloads over plain HTTP' {
@@ -132,8 +132,8 @@ Describe 'installer behaviour' {
         if ($existing) { Add-ToPath $existing | Should -BeFalse }
     }
 
-    It 'makes vdb usable in the current session, not just new ones' {
-        # "vdb is not recognized" was the most common post-install complaint:
+    It 'makes odb usable in the current session, not just new ones' {
+        # "odb is not recognized" was the most common post-install complaint:
         # persisting the User PATH only affects shells started afterwards.
         (Get-Content $Installer -Raw) | Should -Match '\$env:Path\s*='
     }
@@ -142,10 +142,10 @@ Describe 'installer behaviour' {
         (Get-Content $Installer -Raw) | Should -Match 'setup'
     }
 
-    It 'honours VDB_NO_SETUP and VDB_NO_ELEVATE' {
+    It 'honours ODB_NO_SETUP and ODB_NO_ELEVATE' {
         $src = Get-Content $Installer -Raw
-        $src | Should -Match 'VDB_NO_SETUP'
-        $src | Should -Match 'VDB_NO_ELEVATE'
+        $src | Should -Match 'ODB_NO_SETUP'
+        $src | Should -Match 'ODB_NO_ELEVATE'
     }
 }
 
@@ -182,7 +182,7 @@ Describe 'host prerequisites' {
 Describe 'end to end' -Tag 'E2E' {
     BeforeAll {
         if (-not $script:E2E) { return }
-        $script:Prefix = Join-Path $env:TEMP "vdb-e2e-$(Get-Random)"
+        $script:Prefix = Join-Path $env:TEMP "odb-e2e-$(Get-Random)"
     }
     AfterAll {
         if ($script:Prefix -and (Test-Path $script:Prefix)) {
@@ -190,23 +190,23 @@ Describe 'end to end' -Tag 'E2E' {
         }
     }
 
-    It 'installs without running setup' -Skip:(-not $env:VDB_TEST_E2E) {
-        $env:VDB_NO_SETUP = '1'
-        $env:VDB_PREFIX = $script:Prefix
+    It 'installs without running setup' -Skip:(-not $env:ODB_TEST_E2E) {
+        $env:ODB_NO_SETUP = '1'
+        $env:ODB_PREFIX = $script:Prefix
         try {
             & $Installer
             $LASTEXITCODE | Should -Be 0
-            Test-Path (Join-Path $script:Prefix 'vdb.exe') | Should -BeTrue
-            Test-Path (Join-Path $script:Prefix 'vdb-linux-amd64') | Should -BeTrue
+            Test-Path (Join-Path $script:Prefix 'odb.exe') | Should -BeTrue
+            Test-Path (Join-Path $script:Prefix 'odb-linux-amd64') | Should -BeTrue
             # The ZFS bundle must NOT be staged: setup fetches it, because only
             # setup knows the kernel.
-            (Get-ChildItem $script:Prefix -Filter 'vectoradb-zfs-*') | Should -BeNullOrEmpty
+            (Get-ChildItem $script:Prefix -Filter 'oxyndb-zfs-*') | Should -BeNullOrEmpty
         } finally {
-            Remove-Item Env:VDB_NO_SETUP, Env:VDB_PREFIX -ErrorAction SilentlyContinue
+            Remove-Item Env:ODB_NO_SETUP, Env:ODB_PREFIX -ErrorAction SilentlyContinue
         }
     }
 
-    It 'reports a version' -Skip:(-not $env:VDB_TEST_E2E) {
-        & (Join-Path $script:Prefix 'vdb.exe') version | Should -Match 'vdb'
+    It 'reports a version' -Skip:(-not $env:ODB_TEST_E2E) {
+        & (Join-Path $script:Prefix 'odb.exe') version | Should -Match 'odb'
     }
 }

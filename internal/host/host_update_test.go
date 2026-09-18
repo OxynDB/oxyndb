@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vectoradb/vectoradb/internal/update"
+	"github.com/oxyndb/oxyndb/internal/update"
 )
 
 // fakeEngine stands in for the VM: it records what the updater runs there.
@@ -33,7 +33,7 @@ func (f *fakeEngine) stage(local string) (string, error) {
 	f.calls = append(f.calls, "stage "+filepath.Base(local))
 	return "/staged", nil
 }
-func (f *fakeEngine) installed() (string, error) { return "/usr/local/bin/vdb", nil }
+func (f *fakeEngine) installed() (string, error) { return "/usr/local/bin/odb", nil }
 func (f *fakeEngine) run(bin string, args ...string) error {
 	f.calls = append(f.calls, bin+" "+strings.Join(args, " "))
 	if len(args) > 1 && args[1] == "install-engine" {
@@ -46,14 +46,14 @@ func (f *fakeEngine) run(bin string, args ...string) error {
 }
 func (f *fakeEngine) output(bin string, args ...string) (string, error) {
 	if bin == "/staged" || f.engineSwapped {
-		return "vdb " + f.newV + "\n", nil
+		return "odb " + f.newV + "\n", nil
 	}
-	return "vdb " + f.oldV + "\n", nil
+	return "odb " + f.oldV + "\n", nil
 }
 
 // fakeReleases serves a GitHub releases list with one release, v0.99.0.
 func fakeReleases(t *testing.T, tamper bool) *httptest.Server {
-	files := map[string]string{"vdb-linux-amd64": "engine 0.99.0"}
+	files := map[string]string{"odb-linux-amd64": "engine 0.99.0"}
 	var mux http.ServeMux
 	srv := httptest.NewServer(&mux)
 	t.Cleanup(srv.Close)
@@ -71,7 +71,7 @@ func fakeReleases(t *testing.T, tamper bool) *httptest.Server {
 	}
 	mux.HandleFunc("/dl/SHA256SUMS", func(w http.ResponseWriter, r *http.Request) { w.Write(sums.Bytes()) })
 	rel.Assets = append(rel.Assets, update.Asset{Name: "SHA256SUMS", URL: srv.URL + "/dl/SHA256SUMS"})
-	mux.HandleFunc("/repos/vectoradb/vectoraDB/releases", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/repos/oxyndb/oxynDB/releases", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode([]update.Release{rel})
 	})
 	return srv
@@ -92,7 +92,7 @@ func runFakeUpdate(t *testing.T, current string, opts UpdateOptions, tamper bool
 		opts:    opts,
 		current: current,
 		client: update.NewClient(func(k string) string {
-			if k == "VDB_UPDATE_BASE_URL" {
+			if k == "ODB_UPDATE_BASE_URL" {
 				return srv.URL
 			}
 			return ""
@@ -123,20 +123,20 @@ func TestUpdateFlow(t *testing.T) {
 	}
 	want := []string{
 		"prepare",
-		"stage vdb-linux-amd64",
+		"stage odb-linux-amd64",
 		"/staged _update-guest stop-services",
-		"/staged _update-guest install-engine --src /staged --dest /usr/local/bin/vdb",
-		"/usr/local/bin/vdb up",
-		"/usr/local/bin/vdb ledger upgrade --all",
-		"/usr/local/bin/vdb start",
+		"/staged _update-guest install-engine --src /staged --dest /usr/local/bin/odb",
+		"/usr/local/bin/odb up",
+		"/usr/local/bin/odb ledger upgrade --all",
+		"/usr/local/bin/odb start",
 	}
 	if got := strings.Join(r.eng.calls, "\n"); got != strings.Join(want, "\n") {
 		t.Fatalf("steps:\n%s\nwant:\n%s", got, strings.Join(want, "\n"))
 	}
 	if !r.hostReplaced {
-		t.Fatal("vdb on the host wasn't replaced")
+		t.Fatal("odb on the host wasn't replaced")
 	}
-	for _, s := range []string{"[6/6] Updating vdb on this computer", "Done — VectoraDB is now v0.99.0. Your data was not touched.", "What's new: "} {
+	for _, s := range []string{"[6/6] Updating odb on this computer", "Done — OxynDB is now v0.99.0. Your data was not touched.", "What's new: "} {
 		if !strings.Contains(r.out.String(), s) {
 			t.Errorf("output lacks %q:\n%s", s, r.out.String())
 		}
@@ -198,7 +198,7 @@ func TestUpdateInstallFailureRestartsOldEngine(t *testing.T) {
 		t.Fatalf("error = %v", r.err)
 	}
 	last := r.eng.calls[len(r.eng.calls)-1]
-	if last != "/usr/local/bin/vdb start" {
+	if last != "/usr/local/bin/odb start" {
 		t.Fatalf("servers weren't restarted on the old engine; last step %q", last)
 	}
 	if r.hostReplaced {
