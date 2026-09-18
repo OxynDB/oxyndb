@@ -19,8 +19,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/oxyndb/oxyndb/internal/branch"
-	"github.com/oxyndb/oxyndb/internal/version"
+	"github.com/OxynDB/oxyndb/internal/branch"
+	"github.com/OxynDB/oxyndb/internal/version"
 )
 
 const protocolVersion = "2024-11-05"

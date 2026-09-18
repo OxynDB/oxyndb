@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/oxyndb/oxyndb/internal/auth"
-	"github.com/oxyndb/oxyndb/internal/branch"
-	"github.com/oxyndb/oxyndb/internal/ledger"
+	"github.com/OxynDB/oxyndb/internal/auth"
+	"github.com/OxynDB/oxyndb/internal/branch"
+	"github.com/OxynDB/oxyndb/internal/ledger"
 )
 
 // registerPolicy mounts the Blackbox policy gate endpoints (behind auth). Reading

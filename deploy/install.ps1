@@ -5,7 +5,7 @@
 # installs the odb launcher, and runs `odb setup`.
 #
 # Usage (PowerShell):
-#   irm https://raw.githubusercontent.com/oxyndb/oxynDB/main/deploy/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/OxynDB/oxyndb/main/deploy/install.ps1 | iex
 #
 # This file must stay free of a UTF-8 BOM: `irm | iex` pipes the BOM into the
 # parser, which then reports `The term '# ' is not recognized` on line 1.
@@ -25,7 +25,7 @@ $ErrorActionPreference = 'Stop'
 # unexpectedly" partway through.
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
 
-$Repo    = if ($env:ODB_REPO)    { $env:ODB_REPO }    else { 'oxyndb/oxynDB' }
+$Repo    = if ($env:ODB_REPO)    { $env:ODB_REPO }    else { 'OxynDB/oxyndb' }
 $Version = if ($env:ODB_VERSION) { $env:ODB_VERSION } else { 'latest' }
 $Prefix  = if ($env:ODB_PREFIX)  { $env:ODB_PREFIX }  else { "$env:LOCALAPPDATA\Programs\oxyndb" }
 
@@ -100,7 +100,7 @@ function Register-Resume {
     # Without the wait it fails immediately on `irm` and the user sees only a
     # stray error window -- which is what happened on the first real machine
     # this was tried on.
-    $url = 'https://raw.githubusercontent.com/oxyndb/oxynDB/main/deploy/install.ps1'
+    $url = 'https://raw.githubusercontent.com/OxynDB/oxyndb/main/deploy/install.ps1'
     $cmd = "for (`$i=0; `$i -lt 60; `$i++) { " +
            "if (Test-Connection -ComputerName raw.githubusercontent.com -Count 1 -Quiet) { break }; " +
            "Start-Sleep -Seconds 5 }; irm $url | iex"
@@ -294,7 +294,7 @@ function Invoke-Install {
             # Always given, even when the resume was registered: it depends on
             # RunOnce firing and on networking being up, neither guaranteed.
             Write-Host "If it does not, just run the same command again:" -ForegroundColor Yellow
-            Write-Host "    irm https://raw.githubusercontent.com/oxyndb/oxynDB/main/deploy/install.ps1 | iex"
+            Write-Host "    irm https://raw.githubusercontent.com/OxynDB/oxyndb/main/deploy/install.ps1 | iex"
             Write-Host "Nothing is lost by re-running it -- the install picks up where it stopped."
             Write-Host ""
             return

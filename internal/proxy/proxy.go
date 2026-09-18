@@ -18,9 +18,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/oxyndb/oxyndb/internal/auth"
-	"github.com/oxyndb/oxyndb/internal/branch"
-	"github.com/oxyndb/oxyndb/internal/tlsutil"
+	"github.com/OxynDB/oxyndb/internal/auth"
+	"github.com/OxynDB/oxyndb/internal/branch"
+	"github.com/OxynDB/oxyndb/internal/tlsutil"
 )
 
 // authStore verifies API keys presented as the connection password. When nil

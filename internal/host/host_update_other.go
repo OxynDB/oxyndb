@@ -10,7 +10,7 @@ import (
 	"os/exec"
 	"runtime"
 
-	"github.com/oxyndb/oxyndb/internal/update"
+	"github.com/OxynDB/oxyndb/internal/update"
 )
 
 // localEngine updates a Linux install, where `odb` is the engine itself.

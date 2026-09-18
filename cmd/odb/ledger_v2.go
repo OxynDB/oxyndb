@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/oxyndb/oxyndb/internal/branch"
+	"github.com/OxynDB/oxyndb/internal/branch"
 )
 
 // ledgerV2Cmd handles the Blackbox 2.0 subcommands of `odb ledger`:

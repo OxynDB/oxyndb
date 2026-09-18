@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/oxyndb/oxyndb/internal/branch"
+	"github.com/OxynDB/oxyndb/internal/branch"
 )
 
 // policyCmd handles `odb policy …`, the Blackbox policy gate: rules checked on

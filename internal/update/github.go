@@ -20,7 +20,7 @@ const (
 	// DefaultBaseURL is the GitHub API. ODB_UPDATE_BASE_URL points elsewhere (tests).
 	DefaultBaseURL = "https://api.github.com"
 	// DefaultRepo matches the installers; ODB_REPO overrides it.
-	DefaultRepo = "oxyndb/oxynDB"
+	DefaultRepo = "OxynDB/oxyndb"
 )
 
 // Asset is one file attached to a release.

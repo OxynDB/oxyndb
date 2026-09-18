@@ -18,7 +18,7 @@ import (
 
 	"golang.org/x/crypto/pbkdf2"
 
-	"github.com/oxyndb/oxyndb/internal/secrets"
+	"github.com/OxynDB/oxyndb/internal/secrets"
 )
 
 // backendPassword is the Postgres role password for every branch. It is the

@@ -38,7 +38,7 @@ function PublicLayout() {
           <NavLink to="/docs">Docs</NavLink>
         </div>
         <div className="right">
-          <a href="https://github.com/oxyndb/oxynDB" target="_blank" rel="noreferrer" className="muted" style={{ fontSize: 13 }}>GitHub ↗</a>
+          <a href="https://github.com/OxynDB/oxyndb" target="_blank" rel="noreferrer" className="muted" style={{ fontSize: 13 }}>GitHub ↗</a>
           {user
             ? <Link to="/dashboard" className="btn ghost" style={{ padding: '6px 12px' }}>Open dashboard →</Link>
             : <NavLink to="/login" className="btn ghost" style={{ padding: '6px 12px' }}>Log in</NavLink>}

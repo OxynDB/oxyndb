@@ -10,7 +10,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/oxyndb/oxyndb/internal/ledger"
+	"github.com/OxynDB/oxyndb/internal/ledger"
 )
 
 // Blackbox policy gate: rules checked on every DDL statement before it runs,

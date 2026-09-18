@@ -5,7 +5,7 @@ package main
 import (
 	"testing"
 
-	"github.com/oxyndb/oxyndb/internal/host"
+	"github.com/OxynDB/oxyndb/internal/host"
 )
 
 func TestParseUpdateArgs(t *testing.T) {

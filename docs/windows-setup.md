@@ -18,7 +18,7 @@ One command, **in PowerShell** — not Command Prompt. `irm` and `iex` are Power
 is the alias for `Invoke-RestMethod`); in cmd.exe you get `irm is not recognized`.
 
 ```powershell
-irm https://raw.githubusercontent.com/oxyndb/oxynDB/main/deploy/install.ps1 | iex
+irm https://raw.githubusercontent.com/OxynDB/oxyndb/main/deploy/install.ps1 | iex
 ```
 
 It does the whole job:

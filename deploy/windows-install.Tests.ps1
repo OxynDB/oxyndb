@@ -103,7 +103,7 @@ Describe 'installer behaviour' {
     It 'builds a latest asset URL over HTTPS' {
         $u = Get-OdbAsset 'odb-windows-amd64.exe'
         $u | Should -BeLike 'https://*'
-        $u | Should -Be 'https://github.com/oxyndb/oxynDB/releases/latest/download/odb-windows-amd64.exe'
+        $u | Should -Be 'https://github.com/OxynDB/oxyndb/releases/latest/download/odb-windows-amd64.exe'
     }
 
     It 'never downloads over plain HTTP' {

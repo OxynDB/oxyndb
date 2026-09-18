@@ -106,7 +106,7 @@ Needs [Lima](https://lima-vm.io) for the local Linux VM.
 
 ```bash
 brew install lima
-curl -fsSL https://raw.githubusercontent.com/oxyndb/oxynDB/main/deploy/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/OxynDB/oxyndb/main/deploy/install.sh | sh
 odb setup
 ```
 
@@ -119,7 +119,7 @@ it's fast.
 The engine runs directly (no VM). ZFS + Docker are provisioned on first start.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/oxyndb/oxynDB/main/deploy/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/OxynDB/oxyndb/main/deploy/install.sh | sh
 sudo odb start
 ```
 
@@ -131,7 +131,7 @@ for you. The engine runs in a dedicated **WSL2** distro that stores branches on
 **btrfs**, so it works on any WSL kernel — nothing kernel-specific to build.
 
 ```powershell
-irm https://raw.githubusercontent.com/oxyndb/oxynDB/main/deploy/install.ps1 | iex
+irm https://raw.githubusercontent.com/OxynDB/oxyndb/main/deploy/install.ps1 | iex
 ```
 
 That installs WSL if absent (no Linux distribution of your own needed —

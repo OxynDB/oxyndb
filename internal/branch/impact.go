@@ -10,7 +10,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/oxyndb/oxyndb/internal/ledger"
+	"github.com/OxynDB/oxyndb/internal/ledger"
 )
 
 // Blackbox impact analysis: before a change, what would it affect? The objects

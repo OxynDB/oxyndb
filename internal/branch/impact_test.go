@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/oxyndb/oxyndb/internal/ledger"
+	"github.com/OxynDB/oxyndb/internal/ledger"
 )
 
 func TestScoreImpact(t *testing.T) {
