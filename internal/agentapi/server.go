@@ -21,15 +21,15 @@ import (
 	"os"
 	"time"
 
-	"github.com/vectoradb/vectoradb/internal/auth"
-	"github.com/vectoradb/vectoradb/internal/branch"
-	"github.com/vectoradb/vectoradb/internal/tlsutil"
+	"github.com/oxyndb/oxyndb/internal/auth"
+	"github.com/oxyndb/oxyndb/internal/branch"
+	"github.com/oxyndb/oxyndb/internal/tlsutil"
 )
 
 // agentTTL is how long an agent branch may live before the reaper removes it
-// (VECTORADB_AGENT_TTL, e.g. "30m"; unset/0 disables reaping).
+// (OXYNDB_AGENT_TTL, e.g. "30m"; unset/0 disables reaping).
 func agentTTL() time.Duration {
-	if v := os.Getenv("VECTORADB_AGENT_TTL"); v != "" {
+	if v := os.Getenv("OXYNDB_AGENT_TTL"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			return d
 		}

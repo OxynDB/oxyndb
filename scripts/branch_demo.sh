@@ -2,15 +2,15 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # Phase 2 demo: instant copy-on-write branching + isolation.
-# Run inside the Linux dev VM (ZFS + Docker), after `vectoradb branch init`.
+# Run inside the Linux dev VM (ZFS + Docker), after `oxyndb branch init`.
 set -euo pipefail
 
-S="${VECTORADB_BIN:-/tmp/vdb}"
+S="${OXYNDB_BIN:-/tmp/odb}"
 
-pmain() { sudo docker exec -e PGPASSWORD=vectoradb vec-main \
-  psql -U vectoradb -d vectoradb "$@"; }
-pbranch() { local b="$1"; shift; sudo docker exec -e PGPASSWORD=vectoradb "vec-$b" \
-  psql -U vectoradb -d vectoradb "$@"; }
+pmain() { sudo docker exec -e PGPASSWORD=oxyndb oxyn-main \
+  psql -U oxyndb -d oxyndb "$@"; }
+pbranch() { local b="$1"; shift; sudo docker exec -e PGPASSWORD=oxyndb "oxyn-$b" \
+  psql -U oxyndb -d oxyndb "$@"; }
 
 echo ">> main rows before branching:"
 pmain -c "SELECT * FROM notes ORDER BY id;"

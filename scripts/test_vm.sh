@@ -12,24 +12,24 @@
 # (scripts/lib/test_guard.sh).
 #
 #   make test-vm                 # create or start it
-#   VDB_TEST_VM=name make test-vm
+#   ODB_TEST_VM=name make test-vm
 set -euo pipefail
 
-NAME="${VDB_TEST_VM:-vdb-test}"
-GO_VERSION="${VDB_TEST_GO_VERSION:-1.26.0}"
-MARKER=/etc/vdb-test-instance
+NAME="${ODB_TEST_VM:-odb-test}"
+GO_VERSION="${ODB_TEST_GO_VERSION:-1.26.0}"
+MARKER=/etc/odb-test-instance
 # Lima forwards a VM's ports to the Mac's localhost. The test stack uses the
 # same ports as a real one (8080, 6432, 8088), so forwarding them could put the
 # test stack behind the user's localhost:8080. The suites talk to the stack from
 # inside the VM, so nothing is forwarded at all.
 NO_FORWARDS='.portForwards=[{"guestIP":"127.0.0.1","guestPortRange":[1,65535],"ignore":true},{"guestIP":"0.0.0.0","guestPortRange":[1,65535],"ignore":true}]'
 
-# vdb picks the user's VM by these names (internal/host/host_darwin.go: it
-# prefers "vectoradb", then "default"), so a test VM with either name would
-# quietly become the one every `vdb` command talks to.
+# odb picks the user's VM by these names (internal/host/host_darwin.go: it
+# prefers "oxyndb", then "default"), so a test VM with either name would
+# quietly become the one every `odb` command talks to.
 case "$NAME" in
-vectoradb | default)
-	echo "refusing: '$NAME' is a name vdb uses for a real install — choose another VDB_TEST_VM" >&2
+oxyndb | default)
+	echo "refusing: '$NAME' is a name odb uses for a real install — choose another ODB_TEST_VM" >&2
 	exit 2
 	;;
 esac
@@ -80,7 +80,7 @@ sudo tar -C /usr/local -xzf "/tmp/$file"
 sudo ln -sf /usr/local/go/bin/go /usr/local/bin/go
 rm -f "/tmp/$file"
 
-echo "VectoraDB throwaway test instance — created $(date -u +%FT%TZ) by scripts/test_vm.sh. Integration suites may destroy anything here." | sudo tee "$marker" >/dev/null
+echo "OxynDB throwaway test instance — created $(date -u +%FT%TZ) by scripts/test_vm.sh. Integration suites may destroy anything here." | sudo tee "$marker" >/dev/null
 GUEST
 
 # The docker group applies to new login sessions only; restart so every later

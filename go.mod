@@ -1,4 +1,4 @@
-module github.com/vectoradb/vectoradb
+module github.com/oxyndb/oxyndb
 
 go 1.26
 

@@ -1,33 +1,33 @@
 #!/bin/sh
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# VectoraDB installer. Installs the `vdb` command, then you run one more command:
+# OxynDB installer. Installs the `odb` command, then you run one more command:
 #
-#   macOS:  vdb setup      # creates a local Linux VM and brings everything up
-#   Linux:  sudo vdb start # provisions ZFS/Docker/image and brings everything up
+#   macOS:  odb setup      # creates a local Linux VM and brings everything up
+#   Linux:  sudo odb start # provisions ZFS/Docker/image and brings everything up
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/vectoradb/vectoraDB/main/deploy/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/oxyndb/oxynDB/main/deploy/install.sh | sh
 #
 # Every download is checked against the release's SHA256SUMS before it is
 # installed: these binaries are run as root, and a truncated or altered download
 # must never reach $PREFIX/bin. Anything that cannot be verified stops the
-# install (VDB_NO_VERIFY=1 deliberately skips the check).
+# install (ODB_NO_VERIFY=1 deliberately skips the check).
 #
 # Env overrides:
-#   VDB_VERSION   release tag to install         (default: latest)
-#   VDB_REPO      GitHub owner/repo              (default: vectoradb/vectoraDB)
-#   VDB_DIST      install from a local dir of prebuilt binaries instead of downloading
-#   VDB_PREFIX    install prefix                 (default: /usr/local)
-#   VDB_BASE_URL  release download base URL      (default: GitHub releases)
-#   VDB_NO_VERIFY set to 1 to skip checksum verification
+#   ODB_VERSION   release tag to install         (default: latest)
+#   ODB_REPO      GitHub owner/repo              (default: oxyndb/oxynDB)
+#   ODB_DIST      install from a local dir of prebuilt binaries instead of downloading
+#   ODB_PREFIX    install prefix                 (default: /usr/local)
+#   ODB_BASE_URL  release download base URL      (default: GitHub releases)
+#   ODB_NO_VERIFY set to 1 to skip checksum verification
 set -eu
 
-REPO="${VDB_REPO:-vectoradb/vectoraDB}"
-VERSION="${VDB_VERSION:-latest}"
-PREFIX="${VDB_PREFIX:-/usr/local}"
+REPO="${ODB_REPO:-oxyndb/oxynDB}"
+VERSION="${ODB_VERSION:-latest}"
+PREFIX="${ODB_PREFIX:-/usr/local}"
 BINDIR="$PREFIX/bin"
-SHAREDIR="$PREFIX/share/vectoradb"
+SHAREDIR="$PREFIX/share/oxyndb"
 
 say()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33mwarning:\033[0m %s\n' "$*" >&2; }
@@ -53,7 +53,7 @@ case "$arch" in
 	*)             err "unsupported architecture: $arch" ;;
 esac
 
-asset="vdb-$os-$arch"
+asset="odb-$os-$arch"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
@@ -69,8 +69,8 @@ fetch() { # fetch <url> <dest>
 
 # Resolve the download URL for a release asset.
 asset_url() { # asset_url <asset-name>
-	if [ -n "${VDB_BASE_URL:-}" ]; then
-		echo "$VDB_BASE_URL/$1"
+	if [ -n "${ODB_BASE_URL:-}" ]; then
+		echo "$ODB_BASE_URL/$1"
 	elif [ "$VERSION" = "latest" ]; then
 		echo "https://github.com/$REPO/releases/latest/download/$1"
 	else
@@ -84,9 +84,9 @@ asset_url() { # asset_url <asset-name>
 # unaltered download), not authorship — signatures would be needed for that.
 
 VERIFY=1
-[ "${VDB_NO_VERIFY:-}" = "1" ] && VERIFY=0
+[ "${ODB_NO_VERIFY:-}" = "1" ] && VERIFY=0
 # A local dir is the user's own build; there is no release to check it against.
-[ -n "${VDB_DIST:-}" ] && VERIFY=0
+[ -n "${ODB_DIST:-}" ] && VERIFY=0
 
 sha256_of() { # sha256_of <file>
 	if command -v sha256sum >/dev/null 2>&1; then
@@ -102,17 +102,17 @@ SUMS=""
 if [ "$VERIFY" = "1" ]; then
 	SUMS="$tmp/SHA256SUMS"
 	fetch "$(asset_url SHA256SUMS)" "$SUMS" 2>/dev/null || err "could not fetch SHA256SUMS for $VERSION.
-Nothing was installed. Retry, or set VDB_NO_VERIFY=1 to install without checking (not recommended)."
+Nothing was installed. Retry, or set ODB_NO_VERIFY=1 to install without checking (not recommended)."
 fi
 
 verify_file() { # verify_file <asset-name> <path>
 	[ "$VERIFY" = "1" ] || return 0
 	want="$(awk -v n="$1" '{ f = $2; sub(/^\*/, "", f) } f == n { print $1; exit }' "$SUMS")"
 	[ -n "$want" ] || { rm -f "$2"; err "$1 is not listed in SHA256SUMS for $VERSION.
-Nothing was installed. Set VDB_NO_VERIFY=1 to install without checking (not recommended)."; }
+Nothing was installed. Set ODB_NO_VERIFY=1 to install without checking (not recommended)."; }
 	got="$(sha256_of "$2")"
 	[ -n "$got" ] || { rm -f "$2"; err "need sha256sum or shasum to verify downloads.
-Nothing was installed. Set VDB_NO_VERIFY=1 to install without checking (not recommended)."; }
+Nothing was installed. Set ODB_NO_VERIFY=1 to install without checking (not recommended)."; }
 	if [ "$got" != "$want" ]; then
 		rm -f "$2"
 		err "checksum mismatch for $1 — the download does not match the release.
@@ -124,35 +124,35 @@ Nothing was installed."
 }
 
 # Get the host binary (from a local dist dir, or a GitHub release).
-if [ -n "${VDB_DIST:-}" ]; then
-	say "Installing from local dir $VDB_DIST"
-	[ -f "$VDB_DIST/$asset" ] || err "missing $VDB_DIST/$asset"
-	cp "$VDB_DIST/$asset" "$tmp/vdb"
+if [ -n "${ODB_DIST:-}" ]; then
+	say "Installing from local dir $ODB_DIST"
+	[ -f "$ODB_DIST/$asset" ] || err "missing $ODB_DIST/$asset"
+	cp "$ODB_DIST/$asset" "$tmp/odb"
 else
 	say "Downloading $asset ($VERSION)…"
-	fetch "$(asset_url "$asset")" "$tmp/vdb" || err "download failed — check the release exists for $os/$arch"
-	verify_file "$asset" "$tmp/vdb"
+	fetch "$(asset_url "$asset")" "$tmp/odb" || err "download failed — check the release exists for $os/$arch"
+	verify_file "$asset" "$tmp/odb"
 fi
-chmod +x "$tmp/vdb"
+chmod +x "$tmp/odb"
 
-say "Installing vdb to $BINDIR"
+say "Installing odb to $BINDIR"
 $SUDO install -d "$BINDIR"
-$SUDO install -m 0755 "$tmp/vdb" "$BINDIR/vdb"
+$SUDO install -m 0755 "$tmp/odb" "$BINDIR/odb"
 
 # On macOS the engine runs in a Linux VM; stash the matching Linux binary so
-# `vdb setup` can install it into the VM without another download.
+# `odb setup` can install it into the VM without another download.
 if [ "$os" = "darwin" ]; then
-	linux_asset="vdb-linux-$arch"
+	linux_asset="odb-linux-$arch"
 	say "Fetching the Linux engine binary ($linux_asset) for the VM…"
-	if [ -n "${VDB_DIST:-}" ] && [ -f "$VDB_DIST/$linux_asset" ]; then
-		cp "$VDB_DIST/$linux_asset" "$tmp/$linux_asset"
+	if [ -n "${ODB_DIST:-}" ] && [ -f "$ODB_DIST/$linux_asset" ]; then
+		cp "$ODB_DIST/$linux_asset" "$tmp/$linux_asset"
 	elif fetch "$(asset_url "$linux_asset")" "$tmp/$linux_asset"; then
 		# It runs as root inside the VM, so it is held to the same standard as
 		# the launcher: verified, or not installed at all.
 		verify_file "$linux_asset" "$tmp/$linux_asset"
 	else
 		rm -f "$tmp/$linux_asset"
-		warn "could not download $linux_asset; \`vdb setup\` will fetch it instead"
+		warn "could not download $linux_asset; \`odb setup\` will fetch it instead"
 	fi
 	if [ -f "$tmp/$linux_asset" ]; then
 		$SUDO install -d "$SHAREDIR"
@@ -161,15 +161,15 @@ if [ "$os" = "darwin" ]; then
 fi
 
 echo
-say "Installed vdb $("$BINDIR/vdb" version 2>/dev/null | awk '{print $2}')"
+say "Installed odb $("$BINDIR/odb" version 2>/dev/null | awk '{print $2}')"
 if [ "$os" = "darwin" ]; then
 	cat <<EOF
 
 Next step (one time):
-  vdb setup      # creates a local Linux VM, provisions it, and starts VectoraDB
+  odb setup      # creates a local Linux VM, provisions it, and starts OxynDB
 
 Then day-to-day:
-  vdb status · vdb branch create qa · vdb stop
+  odb status · odb branch create qa · odb stop
 EOF
 	command -v limactl >/dev/null 2>&1 || cat <<EOF
 
@@ -180,9 +180,9 @@ else
 	cat <<EOF
 
 Next step:
-  sudo vdb start   # provisions ZFS + Docker + image, then brings everything up
+  sudo odb start   # provisions ZFS + Docker + image, then brings everything up
 
 Then day-to-day:
-  vdb status · vdb branch create qa · vdb stop
+  odb status · odb branch create qa · odb stop
 EOF
 fi

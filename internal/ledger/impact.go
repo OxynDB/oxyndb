@@ -9,7 +9,7 @@ import (
 )
 
 // SchemaImpact is the idempotent SQL for Blackbox impact analysis
-// (vdb.blast_radius). Apply it after the other Blackbox schemas.
+// (odb.blast_radius). Apply it after the other Blackbox schemas.
 //
 //go:embed impact.sql
 var SchemaImpact string

@@ -15,20 +15,20 @@ import (
 // Postgres+wal-g image. Historically an operator created all of these by hand
 // (truncate a file, zpool create, zfs create, docker build) — that is the bulk
 // of the old setup instructions. Provision does it automatically and
-// idempotently, so day-to-day use collapses to a single `vdb up`/`vdb start`.
+// idempotently, so day-to-day use collapses to a single `odb up`/`odb start`.
 
 const (
-	// pool is derived from datasetBase ("vectoradb/branches" -> "vectoradb").
-	pool = "vectoradb"
+	// pool is derived from datasetBase ("oxyndb/branches" -> "oxyndb").
+	pool = "oxyndb"
 
 	// Defaults for auto-creating the pool on a loopback file when no ZFS pool
 	// exists yet. Overridable via env for operators with a spare block device.
-	defaultZpoolFile = "/var/lib/vectoradb-zpool.img"
+	defaultZpoolFile = "/var/lib/oxyndb-zpool.img"
 	defaultZpoolSize = "30G"
 
-	envZpoolDevice  = "VECTORADB_ZPOOL_DEVICE"  // block device or file for the pool vdev
-	envZpoolSize    = "VECTORADB_ZPOOL_SIZE"    // size when creating a file vdev
-	envImageContext = "VECTORADB_IMAGE_CONTEXT" // docker build context for the image
+	envZpoolDevice  = "OXYNDB_ZPOOL_DEVICE"  // block device or file for the pool vdev
+	envZpoolSize    = "OXYNDB_ZPOOL_SIZE"    // size when creating a file vdev
+	envImageContext = "OXYNDB_IMAGE_CONTEXT" // docker build context for the image
 )
 
 func envOr(key, def string) string {

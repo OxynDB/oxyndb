@@ -19,8 +19,8 @@ var SchemaPolicy string
 
 // SQLSTATEs of the policy gate (docs/policy-errors.md).
 const (
-	PolicyBlockCode = "VDB01" // ERROR: the statement was refused
-	PolicyWarnCode  = "VDB02" // NOTICE: the statement ran
+	PolicyBlockCode = "ODB01" // ERROR: the statement was refused
+	PolicyWarnCode  = "ODB02" // NOTICE: the statement ran
 )
 
 // PolicyDetail is the JSON object in the DETAIL of a policy error or warning

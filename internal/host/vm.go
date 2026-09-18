@@ -4,10 +4,10 @@ package host
 
 import "fmt"
 
-// vmUsage is the `vdb vm` help line.
-const vmUsage = "usage: vdb vm [status|shell]"
+// vmUsage is the `odb vm` help line.
+const vmUsage = "usage: odb vm [status|shell]"
 
-// VM runs `vdb vm`: a look at, or a shell inside, the VM that macOS (Lima) and
+// VM runs `odb vm`: a look at, or a shell inside, the VM that macOS (Lima) and
 // Windows (WSL2) keep the engine in. It runs on the host itself and is never
 // forwarded, since it is about the VM rather than something inside it.
 func VM(args []string) error {
@@ -28,7 +28,7 @@ func VM(args []string) error {
 	}
 }
 
-// vmSubcommand picks the `vdb vm` subcommand; no argument means status.
+// vmSubcommand picks the `odb vm` subcommand; no argument means status.
 func vmSubcommand(args []string) (string, error) {
 	if len(args) == 0 {
 		return "status", nil
@@ -36,7 +36,7 @@ func vmSubcommand(args []string) (string, error) {
 	switch args[0] {
 	case "status", "shell":
 		if len(args) > 1 {
-			return "", fmt.Errorf("vdb vm %s takes no arguments — %s", args[0], vmUsage)
+			return "", fmt.Errorf("odb vm %s takes no arguments — %s", args[0], vmUsage)
 		}
 		return args[0], nil
 	case "help", "-h", "--help":

@@ -1,12 +1,12 @@
-# VectoraDB — TypeScript client
+# OxynDB — TypeScript client
 
-A thin, dependency-free client for the VectoraDB control-plane REST API (uses the
+A thin, dependency-free client for the OxynDB control-plane REST API (uses the
 built-in `fetch`). Apache-2.0.
 
 ```ts
-import { VectoraDB } from "@vectoradb/client"
+import { OxynDB } from "@oxyndb/client"
 
-const db = new VectoraDB("vdb_…")            // API key
+const db = new OxynDB("odb_…")            // API key
 await db.createBranch("qa")
 console.log(await db.query("qa", "select 1"))
 console.log(await db.verifyBlackbox("qa"))   // tamper-evidence check (verifyLedger() still works)

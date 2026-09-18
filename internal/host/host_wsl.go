@@ -11,14 +11,14 @@ import (
 	"unicode/utf16"
 )
 
-// defaultWSLDistro is the dedicated distro `vdb setup` creates on Windows.
-const defaultWSLDistro = "vectoradb"
+// defaultWSLDistro is the dedicated distro `odb setup` creates on Windows.
+const defaultWSLDistro = "oxyndb"
 
 // guestImageContext is where setup stages the docker/postgres build context
 // inside the distro. The engine's ensureImage() reads it from
-// VECTORADB_IMAGE_CONTEXT, so an installed user (who has no repo checkout, and
+// OXYNDB_IMAGE_CONTEXT, so an installed user (who has no repo checkout, and
 // therefore nothing for findImageContext to discover) can still build the image.
-const guestImageContext = "/usr/local/share/vectoradb/docker/postgres"
+const guestImageContext = "/usr/local/share/oxyndb/docker/postgres"
 
 // resolveWSLDistro picks the distro name from an override (e.g. an env var),
 // falling back to the dedicated default.
@@ -36,7 +36,7 @@ func resolveWSLDistro(override string) string {
 const guestPATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 // guestEnv is the environment every forwarded command runs with inside the
-// distro: the in-guest marker (so the guest vdb never forwards again), a PATH
+// distro: the in-guest marker (so the guest odb never forwards again), a PATH
 // that finds the storage tools, the staged docker build context, and the
 // copy-on-write driver.
 //
@@ -50,8 +50,8 @@ func guestEnv() []string {
 	return []string{
 		envInGuest + "=1",
 		"PATH=" + guestPATH,
-		"VECTORADB_IMAGE_CONTEXT=" + guestImageContext,
-		"VECTORADB_STORAGE=btrfs",
+		"OXYNDB_IMAGE_CONTEXT=" + guestImageContext,
+		"OXYNDB_STORAGE=btrfs",
 	}
 }
 
@@ -101,7 +101,7 @@ func decodeWSLList(raw []byte) []wslDistro {
 
 // winPathToMnt converts a Windows path to its WSL /mnt/<drive> form.
 //
-//	C:\Users\x\vdb-linux-amd64  ->  /mnt/c/Users/x/vdb-linux-amd64
+//	C:\Users\x\odb-linux-amd64  ->  /mnt/c/Users/x/odb-linux-amd64
 func winPathToMnt(p string) string {
 	p = strings.ReplaceAll(p, `\`, "/")
 	if len(p) >= 2 && p[1] == ':' {
@@ -119,4 +119,4 @@ func parseKernelRelease(raw []byte) string {
 // distroImageName is the prebuilt distro: Ubuntu with Docker, btrfs tools,
 // the engine and the container images already in place. Importing it replaces
 // an apt install, a docker build and three registry pulls on the user's machine.
-const distroImageName = "vectoradb-distro.tar.gz"
+const distroImageName = "oxyndb-distro.tar.gz"

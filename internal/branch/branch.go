@@ -22,24 +22,24 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vectoradb/vectoradb/internal/ledger"
-	"github.com/vectoradb/vectoradb/internal/secrets"
+	"github.com/oxyndb/oxyndb/internal/ledger"
+	"github.com/oxyndb/oxyndb/internal/secrets"
 )
 
 const (
-	datasetBase = "vectoradb/branches"
-	mountBase   = "/vectoradb/branches"
-	network     = "vectoradb"
-	image       = "ghcr.io/vectoradb/postgres-walg:16"
+	datasetBase = "oxyndb/branches"
+	mountBase   = "/oxyndb/branches"
+	network     = "oxyndb"
+	image       = "ghcr.io/oxyndb/postgres-walg:16"
 	// Throwaway loader images used by the migration adapters, run on the shared
 	// network so they can reach both the source and the target instance.
 	// pgloaderImage is built locally on first use — Debian packages pgloader for
 	// both amd64 and arm64, unlike the amd64-only Docker Hub image.
-	pgloaderImage = "vectoradb/pgloader:local" // MariaDB / MySQL ≤5.7 → Postgres
-	mysqlImage    = "mysql:8"                  // client + mysqldump; speaks the MySQL 8.x protocol pgloader can't
-	mongoImage    = "mongo:7"                  // ships mongosh for enumerating/exporting collections
-	pgUser        = "vectoradb"
-	pgDatabase    = "vectoradb"
+	pgloaderImage = "oxyndb/pgloader:local" // MariaDB / MySQL ≤5.7 → Postgres
+	mysqlImage    = "mysql:8"               // client + mysqldump; speaks the MySQL 8.x protocol pgloader can't
+	mongoImage    = "mongo:7"               // ships mongosh for enumerating/exporting collections
+	pgUser        = "oxyndb"
+	pgDatabase    = "oxyndb"
 	pgUID         = "999" // the postgres user's uid inside the official image
 )
 
@@ -52,7 +52,7 @@ func minioPass() string { return secrets.Load().MinioPassword }
 
 func dataset(name string) string    { return datasetBase + "/" + name }
 func mountpoint(name string) string { return mountBase + "/" + name }
-func container(name string) string  { return "vec-" + name }
+func container(name string) string  { return "oxyn-" + name }
 func snapFor(parent, name string) string {
 	return dataset(parent) + "@for-" + name
 }
@@ -109,8 +109,8 @@ func startContainer(name string, primary bool) error {
 	// (BackendAddr -> containerIP), so no host port is published by default. That
 	// keeps branch databases unreachable from outside the VM, where a direct
 	// connection would bypass the gateway, its API key, TLS, and ledger
-	// attribution. VECTORADB_DEBUG_PORTS publishes a host port for debugging.
-	if os.Getenv("VECTORADB_DEBUG_PORTS") != "" {
+	// attribution. OXYNDB_DEBUG_PORTS publishes a host port for debugging.
+	if os.Getenv("OXYNDB_DEBUG_PORTS") != "" {
 		if primary {
 			args = append(args, "-p", "5432:5432")
 		} else {
@@ -119,7 +119,7 @@ func startContainer(name string, primary bool) error {
 	}
 	if primary {
 		args = append(args,
-			"-e", "WALG_S3_PREFIX=s3://vectoradb-wal",
+			"-e", "WALG_S3_PREFIX=s3://oxyndb-wal",
 			"-e", "AWS_ACCESS_KEY_ID="+minioUser(),
 			"-e", "AWS_SECRET_ACCESS_KEY="+minioPass(),
 			"-e", "AWS_ENDPOINT=http://minio:9000",
@@ -149,7 +149,7 @@ func waitReady(name string) error {
 	// *temporary* server so it can create the database and run init scripts. That
 	// server listens on the Unix socket but is started with listen_addresses='',
 	// so a socket probe reports ready while the real cluster does not yet exist.
-	// The engine then connects and gets either `database "vectoradb" does not
+	// The engine then connects and gets either `database "oxyndb" does not
 	// exist` or, if it lands in the window where the entrypoint stops the
 	// temporary server, `the database system is shutting down` — which is exactly
 	// how setup failed on a fresh Windows machine.
@@ -178,7 +178,7 @@ func Init() error {
 	if err := ensureNetwork(); err != nil {
 		return err
 	}
-	// After `vdb ha failover` the promoted standby is the primary; the old main
+	// After `odb ha failover` the promoted standby is the primary; the old main
 	// must stay stopped.
 	if PrimaryContainer() == container("standby") {
 		return ensurePromotedStandby()
@@ -230,7 +230,7 @@ func Init() error {
 // secret, so the gateway can log clients in as it. The role is created by the
 // ledger install (roles are cluster-global and travel with a branch's clone).
 func syncAppRole(name string) error {
-	return psqlStdin(name, fmt.Sprintf("ALTER ROLE vdbclient WITH LOGIN PASSWORD %s;", quoteLiteral(pgPass())))
+	return psqlStdin(name, fmt.Sprintf("ALTER ROLE odbclient WITH LOGIN PASSWORD %s;", quoteLiteral(pgPass())))
 }
 
 // ensuredRoles caches which (branch, email) per-user roles this process has
@@ -240,8 +240,8 @@ var ensuredRoles sync.Map
 // EnsureUserRole makes sure a per-user login role named for email exists on the
 // branch's Postgres, so the gateway can log a client in AS that role — and the
 // ledger can read session_user as the actor, an identity the client cannot forge
-// (SET ROLE does not change session_user). The role is a member of vdbclient
-// (inherits its data access) and defaults its current role to vdbclient, so
+// (SET ROLE does not change session_user). The role is a member of odbclient
+// (inherits its data access) and defaults its current role to odbclient, so
 // object ownership and RLS stay shared exactly as before.
 func EnsureUserRole(branchName, email string) error {
 	if branchName == "" {
@@ -255,10 +255,10 @@ func EnsureUserRole(branchName, email string) error {
 DECLARE r text := %s;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
-    EXECUTE format('CREATE ROLE %%I LOGIN NOSUPERUSER NOCREATEROLE NOCREATEDB INHERIT IN ROLE vdbclient', r);
+    EXECUTE format('CREATE ROLE %%I LOGIN NOSUPERUSER NOCREATEROLE NOCREATEDB INHERIT IN ROLE odbclient', r);
   END IF;
   EXECUTE format('ALTER ROLE %%I WITH LOGIN PASSWORD %%L', r, %s);
-  EXECUTE format('ALTER ROLE %%I SET role = vdbclient', r);
+  EXECUTE format('ALTER ROLE %%I SET role = odbclient', r);
 END $do$;`, quoteLiteral(email), quoteLiteral(pgPass()))
 	if err := psqlStdin(branchName, sql); err != nil {
 		return err
@@ -311,7 +311,7 @@ func Ledger(name string, limit int) error {
 		coalesce(actor,'-') AS actor, actor_kind AS kind, coalesce(tool,'-') AS tool,
 		command_tag AS command, coalesce(object_identity,'') AS object,
 		status, coalesce(risk,'') AS risk
-		FROM vdb.schema_ledger ORDER BY at DESC LIMIT %d`, limit)
+		FROM odb.schema_ledger ORDER BY at DESC LIMIT %d`, limit)
 	return run("docker", "exec", "-e", "PGPASSWORD="+pgPass(), container(name),
 		"psql", "-U", pgUser, "-d", pgDatabase, "-P", "pager=off", "-c", q)
 }
@@ -323,10 +323,10 @@ func Ledger(name string, limit int) error {
 //
 // LedgerVerifySQL is exported so the control-plane can run the same check.
 const LedgerVerifySQL = `WITH v AS (
-  SELECT id, prev_hash, row_hash, vdb._ledger_hash(s.*) AS recomputed,
+  SELECT id, prev_hash, row_hash, odb._ledger_hash(s.*) AS recomputed,
          lag(row_hash) OVER (ORDER BY id) AS prev_link
-  FROM vdb.schema_ledger s WHERE row_hash IS NOT NULL)
-SELECT (SELECT count(*) FROM vdb.schema_ledger WHERE row_hash IS NULL) AS legacy,
+  FROM odb.schema_ledger s WHERE row_hash IS NOT NULL)
+SELECT (SELECT count(*) FROM odb.schema_ledger WHERE row_hash IS NULL) AS legacy,
        count(*) AS chained,
        count(*) FILTER (WHERE row_hash <> recomputed OR prev_hash IS DISTINCT FROM coalesce(prev_link,'')) AS broken,
        coalesce(min(id) FILTER (WHERE row_hash <> recomputed OR prev_hash IS DISTINCT FROM coalesce(prev_link,''))::text,'') AS first_broken
@@ -395,7 +395,7 @@ func LedgerText(name string, limit int) (string, error) {
 	q := fmt.Sprintf(`SELECT to_char(at,'MM-DD HH24:MI:SS') AS time,
 		coalesce(actor,'-') AS actor, actor_kind AS kind, command_tag AS command,
 		coalesce(object_identity,'') AS object, status, coalesce(risk,'') AS risk
-		FROM vdb.schema_ledger ORDER BY at DESC LIMIT %d`, limit)
+		FROM odb.schema_ledger ORDER BY at DESC LIMIT %d`, limit)
 	return QueryText(name, q)
 }
 
@@ -478,7 +478,7 @@ func List() error {
 		return err
 	}
 	fmt.Println("\n=== postgres containers ===")
-	return run("docker", "ps", "--filter", "name=vec-",
+	return run("docker", "ps", "--filter", "name=oxyn-",
 		"--format", "table {{.Names}}\t{{.Status}}")
 }
 
@@ -521,7 +521,7 @@ func Up() error {
 			"-e", "MINIO_ROOT_USER="+minioUser(),
 			"-e", "MINIO_ROOT_PASSWORD="+minioPass(),
 			"-p", "9000:9000", "-p", "9001:9001",
-			"-v", "vectoradb-minio:/data",
+			"-v", "oxyndb-minio:/data",
 			minioImage(), "server", "/data", "--console-address", ":9001",
 		); err != nil {
 			return err
@@ -530,7 +530,7 @@ func Up() error {
 	// Create the WAL bucket (idempotent).
 	if err := run("docker", "run", "--rm", "--network", network,
 		"--entrypoint", "sh", mcImage(), "-c",
-		fmt.Sprintf("until mc alias set local http://minio:9000 %s %s; do sleep 1; done; mc mb -p local/vectoradb-wal", minioUser(), minioPass()),
+		fmt.Sprintf("until mc alias set local http://minio:9000 %s %s; do sleep 1; done; mc mb -p local/oxyndb-wal", minioUser(), minioPass()),
 	); err != nil {
 		return err
 	}
@@ -542,7 +542,7 @@ func Up() error {
 func Down() error {
 	out, _ := capture("docker", "ps", "-a", "--format", "{{.Names}}")
 	for _, n := range strings.Fields(out) {
-		if n == "minio" || n == "vectoradb-console" || strings.HasPrefix(n, "vec-") {
+		if n == "minio" || n == "oxyndb-console" || strings.HasPrefix(n, "oxyn-") {
 			quiet("docker", "rm", "-f", n)
 		}
 	}
@@ -550,8 +550,8 @@ func Down() error {
 }
 
 // Backup takes a base backup of the current primary and pushes it to object
-// storage. It follows the primary pointer rather than always using vec-main:
-// after `vdb ha failover` main is stopped and the promoted standby holds every
+// storage. It follows the primary pointer rather than always using oxyn-main:
+// after `odb ha failover` main is stopped and the promoted standby holds every
 // write, so a backup of main would be stale — or would simply fail.
 func Backup() error {
 	primary := PrimaryContainer()
@@ -588,7 +588,7 @@ func Restore(ts string) error {
 	quiet("docker", "rm", "-f", container(name))
 	if err := run("docker", "run", "-d",
 		"--name", container(name), "--network", network,
-		"-e", "WALG_S3_PREFIX=s3://vectoradb-wal",
+		"-e", "WALG_S3_PREFIX=s3://oxyndb-wal",
 		// The same per-install MinIO credentials the primary archives WAL with —
 		// the object store rejects anything else, so a hardcoded pair can't fetch.
 		"-e", "AWS_ACCESS_KEY_ID="+minioUser(),
@@ -612,7 +612,7 @@ func Restore(ts string) error {
 		return err
 	}
 	fmt.Printf("restored to %q, ready as container %s (port 5433). Query it with:\n"+
-		"  sudo docker exec %s psql -U vectoradb -d vectoradb -c 'SELECT ...'\n",
+		"  sudo docker exec %s psql -U oxyndb -d oxyndb -c 'SELECT ...'\n",
 		ts, container(name), container(name))
 	return nil
 }
@@ -640,7 +640,7 @@ func Status() error {
 	if primary == container("main") {
 		fmt.Println("=== main readiness ===")
 	} else {
-		// After a failover the promoted standby serves main, so probing vec-main
+		// After a failover the promoted standby serves main, so probing oxyn-main
 		// would report the stopped container and look like an outage.
 		fmt.Printf("=== main readiness (served by %s since the failover) ===\n", primary)
 	}
@@ -680,7 +680,7 @@ func dsn(host, port string) string {
 	return fmt.Sprintf("postgresql://%s:%s@%s:%s/%s", pgUser, pgPass(), host, port, pgDatabase)
 }
 
-// containerIP returns a container's IP on the vectoradb docker network. The
+// containerIP returns a container's IP on the oxyndb docker network. The
 // in-guest gateway routes to it directly, so branch Postgres needs no published
 // host port and stays unreachable from outside the VM.
 func containerIP(cont string) (string, error) {
@@ -697,7 +697,7 @@ func containerIP(cont string) (string, error) {
 }
 
 // parsePublishedPort extracts the host port from `docker port` output such as
-// "0.0.0.0:32781\n[::]:32781". Retained for VECTORADB_DEBUG_PORTS tooling.
+// "0.0.0.0:32781\n[::]:32781". Retained for OXYNDB_DEBUG_PORTS tooling.
 func parsePublishedPort(out string) (string, error) {
 	line := out
 	if i := strings.IndexByte(out, '\n'); i >= 0 {
@@ -717,7 +717,7 @@ func CreateAgentBranch(agentID string) (Info, error) {
 	// (each branch is a full Postgres). 0 disables the cap.
 	if max := agentMax(); max > 0 {
 		if existing, err := ListAgentBranches(); err == nil && len(existing) >= max {
-			return Info{}, fmt.Errorf("agent branch limit reached (%d) — delete some or raise VECTORADB_AGENT_MAX", max)
+			return Info{}, fmt.Errorf("agent branch limit reached (%d) — delete some or raise OXYNDB_AGENT_MAX", max)
 		}
 	}
 	name := agentBranch(agentID)
@@ -732,7 +732,7 @@ func CreateAgentBranch(agentID string) (Info, error) {
 	// direct connections as agent activity even without the Gateway in the path.
 	actor := "agent-" + strings.ReplaceAll(agentID, "'", "''")
 	_ = psqlStdin(name, fmt.Sprintf(
-		"ALTER DATABASE %s SET vdb.actor = '%s'; ALTER DATABASE %s SET vdb.actor_kind = 'agent';",
+		"ALTER DATABASE %s SET odb.actor = '%s'; ALTER DATABASE %s SET odb.actor_kind = 'agent';",
 		pgDatabase, actor, pgDatabase))
 	// The compatibility switch keeps the old superuser DSN over the docker
 	// network, which only resolves inside the VM.
@@ -796,7 +796,7 @@ func primaryFile() string {
 	if err != nil || home == "" {
 		home = "/tmp"
 	}
-	return filepath.Join(home, ".vectoradb", "primary")
+	return filepath.Join(home, ".oxyndb", "primary")
 }
 
 // PrimaryContainer is the container currently acting as the "main" primary.
@@ -903,15 +903,15 @@ func Suspend(name string) error {
 
 // suspendRefusal says why a branch must not be suspended: the gateway never wakes
 // the primary (that could revive a stepped-down one), and the HA standby is
-// managed by `vdb ha` — after a failover it is the primary itself.
+// managed by `odb ha` — after a failover it is the primary itself.
 func suspendRefusal(name, primary string, haEnabled bool) error {
 	switch {
 	case name == "main":
-		return fmt.Errorf("refusing to suspend the primary branch 'main': the gateway won't wake it (stop everything with `vdb stop`)")
+		return fmt.Errorf("refusing to suspend the primary branch 'main': the gateway won't wake it (stop everything with `odb stop`)")
 	case container(name) == primary:
-		return fmt.Errorf("refusing to suspend %q: it is serving 'main' since `vdb ha failover`", name)
+		return fmt.Errorf("refusing to suspend %q: it is serving 'main' since `odb ha failover`", name)
 	case name == "standby" && haEnabled:
-		return fmt.Errorf("refusing to suspend the HA standby: manage it with `vdb ha` (e.g. `vdb ha disable`)")
+		return fmt.Errorf("refusing to suspend the HA standby: manage it with `odb ha` (e.g. `odb ha disable`)")
 	}
 	return nil
 }
@@ -977,15 +977,15 @@ func ActiveConnections(name string) (int, error) {
 }
 
 // SuspendableBranches lists running branches eligible for auto-suspend (every
-// vec-* container except the primary "main" and the disposable "restore").
+// oxyn-* container except the primary "main" and the disposable "restore").
 func SuspendableBranches() ([]string, error) {
-	out, err := capture("docker", "ps", "--filter", "name=vec-", "--format", "{{.Names}}")
+	out, err := capture("docker", "ps", "--filter", "name=oxyn-", "--format", "{{.Names}}")
 	if err != nil {
 		return nil, err
 	}
 	var names []string
 	for _, n := range strings.Fields(out) {
-		bn := strings.TrimPrefix(n, "vec-")
+		bn := strings.TrimPrefix(n, "oxyn-")
 		if bn == "main" || bn == "restore" || bn == "standby" {
 			continue // primary, restore target, and HA standby never auto-suspend
 		}
@@ -995,9 +995,9 @@ func SuspendableBranches() ([]string, error) {
 }
 
 // agentMax is the maximum number of concurrent agent branches (default 50; 0
-// disables the cap). Set VECTORADB_AGENT_MAX to override.
+// disables the cap). Set OXYNDB_AGENT_MAX to override.
 func agentMax() int {
-	if v := os.Getenv("VECTORADB_AGENT_MAX"); v != "" {
+	if v := os.Getenv("OXYNDB_AGENT_MAX"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			return n
 		}
@@ -1015,7 +1015,7 @@ func ReapAgentBranches(maxAge time.Duration) (int, error) {
 	// -a: a suspended agent branch still holds its storage, so it must be
 	// reaped like a running one (the Gateway suspends idle branches, so an
 	// abandoned sandbox is usually stopped, not running).
-	out, err := capture("docker", "ps", "-a", "--filter", "name=vec-agent-", "--format", "{{.Names}}")
+	out, err := capture("docker", "ps", "-a", "--filter", "name=oxyn-agent-", "--format", "{{.Names}}")
 	if err != nil {
 		return 0, err
 	}
@@ -1032,7 +1032,7 @@ func ReapAgentBranches(maxAge time.Duration) (int, error) {
 		if time.Since(created) <= maxAge {
 			continue
 		}
-		agentID := strings.TrimPrefix(strings.TrimPrefix(cont, "vec-"), "agent-")
+		agentID := strings.TrimPrefix(strings.TrimPrefix(cont, "oxyn-"), "agent-")
 		if err := DeleteAgentBranch(agentID); err == nil {
 			reaped++
 		}
@@ -1045,13 +1045,13 @@ func ReapAgentBranches(maxAge time.Duration) (int, error) {
 // connect, so leaving it out would hide it from the cap, from the reaper and
 // from anyone asking what exists.
 func ListAgentBranches() ([]Info, error) {
-	out, err := capture("docker", "ps", "-a", "--filter", "name=vec-agent-", "--format", "{{.Names}}")
+	out, err := capture("docker", "ps", "-a", "--filter", "name=oxyn-agent-", "--format", "{{.Names}}")
 	if err != nil {
 		return nil, err
 	}
 	var infos []Info
 	for _, n := range strings.Fields(out) {
-		bn := strings.TrimPrefix(n, "vec-")
+		bn := strings.TrimPrefix(n, "oxyn-")
 		// The DSN carries no key: it is shown once, when the branch is created.
 		// The legacy switch keeps the old superuser DSN over the docker network.
 		d := agentGatewayDSN(bn, "")

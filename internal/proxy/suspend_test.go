@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/vectoradb/vectoradb/internal/branch"
+	"github.com/oxyndb/oxyndb/internal/branch"
 )
 
 // A branch that is replicating from a source must survive the reaper: its apply

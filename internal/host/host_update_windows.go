@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/vectoradb/vectoradb/internal/update"
+	"github.com/oxyndb/oxyndb/internal/update"
 )
 
 // wslEngine updates the engine inside the WSL distro.
@@ -30,14 +30,14 @@ func (w *wslEngine) where() string { return "the WSL distro" }
 
 func (w *wslEngine) prepare() error {
 	if !wslInstalled() {
-		return fmt.Errorf("WSL is required on Windows. Install it with `wsl --install` (admin, then reboot), then run `vdb setup`")
+		return fmt.Errorf("WSL is required on Windows. Install it with `wsl --install` (admin, then reboot), then run `odb setup`")
 	}
 	name := w.distro()
 	if !distroExists(name) {
-		return fmt.Errorf("no VectoraDB WSL distro yet — run `vdb setup` once to create it")
+		return fmt.Errorf("no OxynDB WSL distro yet — run `odb setup` once to create it")
 	}
 	if !distroRunning(name) {
-		fmt.Printf("Starting the VectoraDB distro (%s)…\n", name)
+		fmt.Printf("Starting the OxynDB distro (%s)…\n", name)
 		if err := waitForSystemd(name); err != nil {
 			return err
 		}
@@ -49,7 +49,7 @@ func (w *wslEngine) prepare() error {
 }
 
 func (w *wslEngine) stage(local string) (string, error) {
-	const dest = "/tmp/vdb-update"
+	const dest = "/tmp/odb-update"
 	script := fmt.Sprintf("set -e; cp %q %q.new; chmod 0755 %q.new; mv -f %q.new %q",
 		winPathToMnt(local), dest, dest, dest, dest)
 	if err := wslRoot(w.distro(), script); err != nil {
@@ -59,12 +59,12 @@ func (w *wslEngine) stage(local string) (string, error) {
 }
 
 func (w *wslEngine) installed() (string, error) {
-	if strings.TrimSpace(os.Getenv("VECTORADB_GUEST_BIN")) != "" {
-		return "", fmt.Errorf("VECTORADB_GUEST_BIN is set (a development setup) — unset it to update the installed engine")
+	if strings.TrimSpace(os.Getenv("OXYNDB_GUEST_BIN")) != "" {
+		return "", fmt.Errorf("OXYNDB_GUEST_BIN is set (a development setup) — unset it to update the installed engine")
 	}
 	p := guestBin(w.distro())
-	if p == "/tmp/vdb" {
-		return "", fmt.Errorf("the WSL distro has no installed engine, only a development build at /tmp/vdb — run `vdb setup` first")
+	if p == "/tmp/odb" {
+		return "", fmt.Errorf("the WSL distro has no installed engine, only a development build at /tmp/odb — run `odb setup` first")
 	}
 	return p, nil
 }
@@ -108,7 +108,7 @@ func platformUpdateHooks(eh engineHost) updateHooks {
 }
 
 // refreshImageContext replaces the Postgres image build context in the distro
-// and next to vdb.exe with the release's, keeping the previous copies as
+// and next to odb.exe with the release's, keeping the previous copies as
 // .prev. Only future image builds use it: running containers and the built
 // image are left alone.
 func refreshImageContext(name, archive string) error {
@@ -123,7 +123,7 @@ func refreshImageContext(name, archive string) error {
 		return fmt.Errorf("refreshing the image build context in the distro: %w", err)
 	}
 	if err := update.ReplaceDirFromTarGz(archive, filepath.Join(installDir(), "docker-context")); err != nil {
-		return fmt.Errorf("refreshing the image build context next to vdb.exe: %w", err)
+		return fmt.Errorf("refreshing the image build context next to odb.exe: %w", err)
 	}
 	return nil
 }
@@ -133,12 +133,12 @@ func replaceHostBinary(files map[string]string, t update.Target) error {
 	if err != nil {
 		return err
 	}
-	prev := filepath.Join(cacheDir(), "updates", "prev", "vdb.exe")
+	prev := filepath.Join(cacheDir(), "updates", "prev", "odb.exe")
 	if err := update.SwapExecutable(files[update.HostAsset(t)], exe, prev); err != nil {
 		return err
 	}
 	refreshEngineCache(files, t)
-	// The installer stages the engine next to vdb.exe too; setup looks there
+	// The installer stages the engine next to odb.exe too; setup looks there
 	// after the cache.
 	engine := filepath.Join(installDir(), update.EngineAsset(t))
 	if regularFile(engine) {

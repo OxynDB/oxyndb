@@ -1,7 +1,7 @@
 {
-  "name": "@vectoradb/client",
+  "name": "@oxyndb/client",
   "version": "0.6.0",
-  "description": "TypeScript client for VectoraDB — serverless Postgres with instant branching and Blackbox, a tamper-evident record of every schema change.",
+  "description": "TypeScript client for OxynDB — serverless Postgres with instant branching and Blackbox, a tamper-evident record of every schema change.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "dist/index.js",
@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc"
   },
-  "repository": { "type": "git", "url": "https://github.com/vectoradb/vectoraDB" },
+  "repository": { "type": "git", "url": "https://github.com/oxyndb/oxynDB" },
   "devDependencies": {
     "typescript": "^5.4.0"
   }

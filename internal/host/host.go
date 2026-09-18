@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package host makes `vdb` a single cross-platform entry point.
+// Package host makes `odb` a single cross-platform entry point.
 //
 // The branching engine needs Linux + ZFS + Docker, which don't exist natively
-// on macOS or Windows. Rather than make users manage a VM by hand, `vdb` hides
+// on macOS or Windows. Rather than make users manage a VM by hand, `odb` hides
 // it: on Linux the engine runs in-process; on macOS engine commands are
 // forwarded into a Lima VM and on Windows into a WSL2 distro, transparently, so
-// a user only ever types `vdb …`.
+// a user only ever types `odb …`.
 //
 // This file holds the OS-independent dispatch. The per-OS transport lives in
 // host_darwin.go (Lima), host_windows.go (WSL2), and host_other.go (Linux/other),
@@ -25,12 +25,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vectoradb/vectoradb/internal/update"
+	"github.com/oxyndb/oxyndb/internal/update"
 )
 
-// Guest environment variable marks a vdb process that is already running inside
+// Guest environment variable marks a odb process that is already running inside
 // the managed Linux VM, so it never tries to forward again.
-const envInGuest = "VECTORADB_IN_GUEST"
+const envInGuest = "OXYNDB_IN_GUEST"
 
 // localCommands run on the host machine itself and are never forwarded.
 var localCommands = map[string]bool{
@@ -73,7 +73,7 @@ func Maybe(args []string) (handled bool, err error) {
 // the `setup` command. Local commands reach it via the normal switch in main.
 func Setup() error { return hostSetup() }
 
-// hostForward forwards an engine command into the managed VM. `vdb import --from
+// hostForward forwards an engine command into the managed VM. `odb import --from
 // <local file>` is special-cased: the file is streamed from THIS machine into the
 // VM over stdin (so imports work from ANY path, not just a VM-mounted home).
 func hostForward(args []string) error {
@@ -84,7 +84,7 @@ func hostForward(args []string) error {
 	return forward(args)
 }
 
-// importLocalFile detects `vdb import --from <path>` where <path> is a readable
+// importLocalFile detects `odb import --from <path>` where <path> is a readable
 // file on THIS machine, and rewrites it to stream that file into the VM over
 // stdin (`--from -`). Returns false for a postgres:// source or a path that
 // isn't a local file (which is forwarded unchanged — it may exist in the VM).
@@ -137,14 +137,14 @@ func isPostgresURL(s string) bool {
 	return strings.HasPrefix(s, "postgres://") || strings.HasPrefix(s, "postgresql://")
 }
 
-// cacheDir is where `vdb setup` caches a freshly-downloaded engine binary. A
+// cacheDir is where `odb setup` caches a freshly-downloaded engine binary. A
 // user-writable path (no sudo), preferred over the installer-staged copy.
 func cacheDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		home = os.TempDir()
 	}
-	return filepath.Join(home, ".vectoradb")
+	return filepath.Join(home, ".oxyndb")
 }
 
 func regularFile(p string) bool {
@@ -152,12 +152,12 @@ func regularFile(p string) bool {
 	return err == nil && fi.Mode().IsRegular()
 }
 
-// bundledLinuxBinary looks for a prebuilt linux vdb (vdb-linux-<arch>): first a
-// build `vdb setup` freshly downloaded into the cache dir, then one the installer
+// bundledLinuxBinary looks for a prebuilt linux odb (odb-linux-<arch>): first a
+// build `odb setup` freshly downloaded into the cache dir, then one the installer
 // staged alongside the host binary, then ./dist for a dev build. Used by both the
 // macOS (Lima) and Windows (WSL2) setup paths to seed the guest.
 func bundledLinuxBinary(arch string) string {
-	if c := filepath.Join(cacheDir(), "vdb-linux-"+arch); regularFile(c) {
+	if c := filepath.Join(cacheDir(), "odb-linux-"+arch); regularFile(c) {
 		return c
 	}
 	exe, err := os.Executable()
@@ -166,10 +166,10 @@ func bundledLinuxBinary(arch string) string {
 	}
 	dir := filepath.Dir(exe)
 	for _, c := range []string{
-		filepath.Join(dir, "vdb-linux-"+arch),
-		filepath.Join(dir, "..", "share", "vectoradb", "vdb-linux-"+arch),
-		filepath.Join(dir, "..", "dist", "vdb-linux-"+arch),
-		filepath.Join(dir, "dist", "vdb-linux-"+arch),
+		filepath.Join(dir, "odb-linux-"+arch),
+		filepath.Join(dir, "..", "share", "oxyndb", "odb-linux-"+arch),
+		filepath.Join(dir, "..", "dist", "odb-linux-"+arch),
+		filepath.Join(dir, "dist", "odb-linux-"+arch),
 	} {
 		if regularFile(c) {
 			return c
@@ -179,26 +179,26 @@ func bundledLinuxBinary(arch string) string {
 }
 
 // refreshEngineBinary downloads the latest Linux engine binary into the cache dir
-// so `vdb setup` installs the newest build instead of reusing a stale one, and
+// so `odb setup` installs the newest build instead of reusing a stale one, and
 // overwrites the previous cached build. Best-effort: on any problem it returns
-// "" and setup falls back to the installer-staged binary. VECTORADB_NO_REFRESH=1
-// skips it (offline or version-pinned installs); VDB_REPO / VDB_VERSION override
+// "" and setup falls back to the installer-staged binary. OXYNDB_NO_REFRESH=1
+// skips it (offline or version-pinned installs); ODB_REPO / ODB_VERSION override
 // the source, matching the installer.
 func refreshEngineBinary(arch string) string {
-	if v := os.Getenv("VECTORADB_NO_REFRESH"); v == "1" || v == "true" {
+	if v := os.Getenv("OXYNDB_NO_REFRESH"); v == "1" || v == "true" {
 		return ""
 	}
-	asset := "vdb-linux-" + arch
+	asset := "odb-linux-" + arch
 	dest := filepath.Join(cacheDir(), asset)
 	fmt.Println("Checking for the latest engine build…")
 
-	if truthyEnv("VDB_NO_VERIFY") {
+	if truthyEnv("ODB_NO_VERIFY") {
 		// Deliberately unverified (an air-gapped mirror, or a release whose
 		// checksums are unreachable). Same behaviour as before verification.
-		fmt.Println("note: VDB_NO_VERIFY is set — the engine download will not be checked against SHA256SUMS.")
-		url := fmt.Sprintf("https://github.com/%s/releases/latest/download/%s", envOr("VDB_REPO", "vectoradb/vectoraDB"), asset)
-		if v := envOr("VDB_VERSION", "latest"); v != "latest" {
-			url = fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", envOr("VDB_REPO", "vectoradb/vectoraDB"), v, asset)
+		fmt.Println("note: ODB_NO_VERIFY is set — the engine download will not be checked against SHA256SUMS.")
+		url := fmt.Sprintf("https://github.com/%s/releases/latest/download/%s", envOr("ODB_REPO", "oxyndb/oxynDB"), asset)
+		if v := envOr("ODB_VERSION", "latest"); v != "latest" {
+			url = fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", envOr("ODB_REPO", "oxyndb/oxynDB"), v, asset)
 		}
 		if err := downloadFile(url, dest); err != nil || !isELF(dest) {
 			_ = os.Remove(dest)
@@ -209,7 +209,7 @@ func refreshEngineBinary(arch string) string {
 	}
 
 	// The engine is installed into the VM and run as root, so it is downloaded
-	// through the same verified path as `vdb update`: the release's SHA256SUMS
+	// through the same verified path as `odb update`: the release's SHA256SUMS
 	// decides, and a file that doesn't match is never kept.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
@@ -218,7 +218,7 @@ func refreshEngineBinary(arch string) string {
 		fmt.Printf("note: "+format+" — using the engine the installer staged.\n", a...)
 		return ""
 	}
-	offer, err := c.Release(ctx, envOr("VDB_VERSION", "latest"), update.Target{GOOS: "linux", HostArch: arch})
+	offer, err := c.Release(ctx, envOr("ODB_VERSION", "latest"), update.Target{GOOS: "linux", HostArch: arch})
 	if err != nil {
 		return keep("could not read the release (%v)", err)
 	}

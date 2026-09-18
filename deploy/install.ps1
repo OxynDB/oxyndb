@@ -1,22 +1,22 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# VectoraDB Windows installer: one command, from a machine with nothing on it to
+# OxynDB Windows installer: one command, from a machine with nothing on it to
 # a running database. Installs WSL if absent (no Linux distribution required),
-# installs the vdb launcher, and runs `vdb setup`.
+# installs the odb launcher, and runs `odb setup`.
 #
 # Usage (PowerShell):
-#   irm https://raw.githubusercontent.com/vectoradb/vectoraDB/main/deploy/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/oxyndb/oxynDB/main/deploy/install.ps1 | iex
 #
 # This file must stay free of a UTF-8 BOM: `irm | iex` pipes the BOM into the
 # parser, which then reports `The term '# ' is not recognized` on line 1.
 #
-# Every VectoraDB download is checked against the release's SHA256SUMS before it
+# Every OxynDB download is checked against the release's SHA256SUMS before it
 # is kept -- these files run as root inside the distro. Anything that cannot be
-# verified stops the install (VDB_NO_VERIFY=1 deliberately skips the check).
+# verified stops the install (ODB_NO_VERIFY=1 deliberately skips the check).
 #
-# Env overrides: VDB_VERSION (default "latest"), VDB_REPO, VDB_PREFIX,
-# VDB_NO_SETUP (skip `vdb setup`), VDB_NO_ELEVATE (never prompt for admin),
-# VDB_NO_VERIFY (skip checksum verification).
+# Env overrides: ODB_VERSION (default "latest"), ODB_REPO, ODB_PREFIX,
+# ODB_NO_SETUP (skip `odb setup`), ODB_NO_ELEVATE (never prompt for admin),
+# ODB_NO_VERIFY (skip checksum verification).
 
 $ErrorActionPreference = 'Stop'
 
@@ -25,9 +25,9 @@ $ErrorActionPreference = 'Stop'
 # unexpectedly" partway through.
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
 
-$Repo    = if ($env:VDB_REPO)    { $env:VDB_REPO }    else { 'vectoradb/vectoraDB' }
-$Version = if ($env:VDB_VERSION) { $env:VDB_VERSION } else { 'latest' }
-$Prefix  = if ($env:VDB_PREFIX)  { $env:VDB_PREFIX }  else { "$env:LOCALAPPDATA\Programs\vectoradb" }
+$Repo    = if ($env:ODB_REPO)    { $env:ODB_REPO }    else { 'oxyndb/oxynDB' }
+$Version = if ($env:ODB_VERSION) { $env:ODB_VERSION } else { 'latest' }
+$Prefix  = if ($env:ODB_PREFIX)  { $env:ODB_PREFIX }  else { "$env:LOCALAPPDATA\Programs\oxyndb" }
 
 # Ubuntu publishes WSL rootfs tarballs directly; pulling from upstream keeps our
 # own release small and avoids redistributing Ubuntu. Note the path: only
@@ -35,7 +35,7 @@ $Prefix  = if ($env:VDB_PREFIX)  { $env:VDB_PREFIX }  else { "$env:LOCALAPPDATA\
 # holds manifests alone.
 $RootfsBase = 'https://cloud-images.ubuntu.com/wsl/releases/noble/current'
 $RootfsName = 'ubuntu-noble-wsl-amd64-wsl.rootfs.tar.gz'
-$RootfsUrl  = if ($env:VDB_ROOTFS_URL) { $env:VDB_ROOTFS_URL } else { "$RootfsBase/$RootfsName" }
+$RootfsUrl  = if ($env:ODB_ROOTFS_URL) { $env:ODB_ROOTFS_URL } else { "$RootfsBase/$RootfsName" }
 
 $script:Step = 0
 $script:Steps = 5
@@ -54,8 +54,8 @@ function Resolve-Arch {
     }
 }
 
-# Get-VdbAsset builds the download URL for a named release asset.
-function Get-VdbAsset([string]$Name) {
+# Get-OdbAsset builds the download URL for a named release asset.
+function Get-OdbAsset([string]$Name) {
     if ($Version -eq 'latest') {
         "https://github.com/$Repo/releases/latest/download/$Name"
     } else {
@@ -100,29 +100,29 @@ function Register-Resume {
     # Without the wait it fails immediately on `irm` and the user sees only a
     # stray error window -- which is what happened on the first real machine
     # this was tried on.
-    $url = 'https://raw.githubusercontent.com/vectoradb/vectoraDB/main/deploy/install.ps1'
+    $url = 'https://raw.githubusercontent.com/oxyndb/oxynDB/main/deploy/install.ps1'
     $cmd = "for (`$i=0; `$i -lt 60; `$i++) { " +
            "if (Test-Connection -ComputerName raw.githubusercontent.com -Count 1 -Quiet) { break }; " +
            "Start-Sleep -Seconds 5 }; irm $url | iex"
     $run = "powershell -NoExit -NoProfile -ExecutionPolicy Bypass -Command `"$cmd`""
     try {
         New-ItemProperty -Force -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce' `
-            -Name 'VectoraDBInstall' -Value $run -PropertyType String | Out-Null
+            -Name 'OxynDBInstall' -Value $run -PropertyType String | Out-Null
         return $true
     } catch { return $false }
 }
 
 # Install-Wsl enables WSL without a Linux distribution.
 #
-# --no-distribution matters: VectoraDB imports its own dedicated distro, so an
+# --no-distribution matters: OxynDB imports its own dedicated distro, so an
 # Ubuntu install is a pure waste of the user's time and disk. Requires admin, so
 # this re-launches elevated and waits.
 function Install-Wsl {
-    if ($env:VDB_NO_ELEVATE) {
+    if ($env:ODB_NO_ELEVATE) {
         throw "WSL is not installed. Run this in an Administrator PowerShell, then re-run the installer:`n" +
               "    wsl --install --no-distribution"
     }
-    Write-Host "  VectoraDB needs WSL. Windows will ask for permission to install it."
+    Write-Host "  OxynDB needs WSL. Windows will ask for permission to install it."
     $wslArgs = @('--install', '--no-distribution')
     if (Test-Admin) {
         & wsl.exe --install --no-distribution 2>&1 | Out-String | Write-Verbose
@@ -201,52 +201,52 @@ function Assert-UpstreamChecksum([string]$Path, [string]$SumsUrl, [string]$Name)
     }
 }
 
-# --- VectoraDB's own releases ----------------------------------------------
+# --- OxynDB's own releases ----------------------------------------------
 # Every release publishes SHA256SUMS beside its assets. It travels over the same
 # TLS connection as the files, so it proves integrity (a complete, unaltered
 # download), not authorship -- signatures would be needed for that. The files
 # below are executed as root inside the distro, so an unverifiable one is not
-# installed. VDB_NO_VERIFY=1 skips the check deliberately.
-$script:VdbSums = $null
+# installed. ODB_NO_VERIFY=1 skips the check deliberately.
+$script:OdbSums = $null
 
-function Get-VdbSums {
-    if ($env:VDB_NO_VERIFY -eq '1') { return $null }
-    if ($null -ne $script:VdbSums) { return $script:VdbSums }
+function Get-OdbSums {
+    if ($env:ODB_NO_VERIFY -eq '1') { return $null }
+    if ($null -ne $script:OdbSums) { return $script:OdbSums }
     try {
-        $body = (Invoke-WebRequest -UseBasicParsing -Uri (Get-VdbAsset 'SHA256SUMS')).Content
+        $body = (Invoke-WebRequest -UseBasicParsing -Uri (Get-OdbAsset 'SHA256SUMS')).Content
     } catch {
-        throw "could not fetch SHA256SUMS for $Version -- nothing was installed.`nRetry, or set VDB_NO_VERIFY=1 to install without checking (not recommended)."
+        throw "could not fetch SHA256SUMS for $Version -- nothing was installed.`nRetry, or set ODB_NO_VERIFY=1 to install without checking (not recommended)."
     }
-    $script:VdbSums = if ($body -is [byte[]]) { [System.Text.Encoding]::UTF8.GetString($body) } else { [string]$body }
-    return $script:VdbSums
+    $script:OdbSums = if ($body -is [byte[]]) { [System.Text.Encoding]::UTF8.GetString($body) } else { [string]$body }
+    return $script:OdbSums
 }
 
-# Get-VdbChecksum returns the expected SHA256 for a release asset, or $null when
+# Get-OdbChecksum returns the expected SHA256 for a release asset, or $null when
 # verification is switched off.
-function Get-VdbChecksum([string]$Name) {
-    $sums = Get-VdbSums
+function Get-OdbChecksum([string]$Name) {
+    $sums = Get-OdbSums
     if ($null -eq $sums) { return $null }
     foreach ($line in ($sums -split "`n")) {
         if ($line -match '^([0-9a-fA-F]{64})\s+\*?(.+?)\s*$' -and $Matches[2] -eq $Name) {
             return $Matches[1].ToLower()
         }
     }
-    throw "$Name is not listed in SHA256SUMS for $Version -- nothing was installed.`nSet VDB_NO_VERIFY=1 to install without checking (not recommended)."
+    throw "$Name is not listed in SHA256SUMS for $Version -- nothing was installed.`nSet ODB_NO_VERIFY=1 to install without checking (not recommended)."
 }
 
-# Test-VdbChecksum reports whether a staged copy still matches the release, for
+# Test-OdbChecksum reports whether a staged copy still matches the release, for
 # deciding if a large download can be reused. Anything unverifiable is $false.
-function Test-VdbChecksum([string]$Path, [string]$Name) {
-    if ($env:VDB_NO_VERIFY -eq '1') { return $false }
-    try { $want = Get-VdbChecksum $Name } catch { return $false }
+function Test-OdbChecksum([string]$Path, [string]$Name) {
+    if ($env:ODB_NO_VERIFY -eq '1') { return $false }
+    try { $want = Get-OdbChecksum $Name } catch { return $false }
     if (-not $want) { return $false }
     return (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLower() -eq $want
 }
 
-# Assert-VdbChecksum verifies a download and deletes it if it does not match.
-function Assert-VdbChecksum([string]$Path, [string]$Name) {
-    $want = Get-VdbChecksum $Name
-    if (-not $want) { return }   # VDB_NO_VERIFY=1
+# Assert-OdbChecksum verifies a download and deletes it if it does not match.
+function Assert-OdbChecksum([string]$Path, [string]$Name) {
+    $want = Get-OdbChecksum $Name
+    if (-not $want) { return }   # ODB_NO_VERIFY=1
     $got = (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLower()
     if ($got -ne $want) {
         Remove-Item $Path -Force -ErrorAction SilentlyContinue
@@ -273,7 +273,7 @@ function Invoke-Install {
         throw "unsupported architecture '$arch' -- only windows/amd64 is published (WSL2 runs x86_64)."
     }
     Write-Host ""
-    Write-Host "VectoraDB installer" -ForegroundColor Cyan
+    Write-Host "OxynDB installer" -ForegroundColor Cyan
 
     # 1. WSL. Done first because everything else is pointless without it -- and
     #    because it is the only step that can require a reboot.
@@ -289,12 +289,12 @@ function Invoke-Install {
             Write-Host ""
             Write-Host "Windows needs to restart to finish enabling WSL." -ForegroundColor Yellow
             if ($resumed) {
-                Write-Host "VectoraDB should continue by itself a moment after you sign back in."
+                Write-Host "OxynDB should continue by itself a moment after you sign back in."
             }
             # Always given, even when the resume was registered: it depends on
             # RunOnce firing and on networking being up, neither guaranteed.
             Write-Host "If it does not, just run the same command again:" -ForegroundColor Yellow
-            Write-Host "    irm https://raw.githubusercontent.com/vectoradb/vectoraDB/main/deploy/install.ps1 | iex"
+            Write-Host "    irm https://raw.githubusercontent.com/oxyndb/oxynDB/main/deploy/install.ps1 | iex"
             Write-Host "Nothing is lost by re-running it -- the install picks up where it stopped."
             Write-Host ""
             return
@@ -305,44 +305,44 @@ function Invoke-Install {
 
     # 2. The launcher and the engine binary, each checked against the release's
     #    own SHA256SUMS before it is kept: both run as root inside the distro.
-    Write-Step "Downloading VectoraDB"
-    Get-File (Get-VdbAsset 'vdb-windows-amd64.exe') "$Prefix\vdb.exe" | Out-Null
-    Assert-VdbChecksum "$Prefix\vdb.exe" 'vdb-windows-amd64.exe'
-    Get-File (Get-VdbAsset 'vdb-linux-amd64') "$Prefix\vdb-linux-amd64" | Out-Null
-    Assert-VdbChecksum "$Prefix\vdb-linux-amd64" 'vdb-linux-amd64'
+    Write-Step "Downloading OxynDB"
+    Get-File (Get-OdbAsset 'odb-windows-amd64.exe') "$Prefix\odb.exe" | Out-Null
+    Assert-OdbChecksum "$Prefix\odb.exe" 'odb-windows-amd64.exe'
+    Get-File (Get-OdbAsset 'odb-linux-amd64') "$Prefix\odb-linux-amd64" | Out-Null
+    Assert-OdbChecksum "$Prefix\odb-linux-amd64" 'odb-linux-amd64'
 
     # The engine finds a Docker build context relative to the working directory,
-    # which finds nothing for someone who installed vdb rather than cloning the
-    # repo -- so ship the context and let `vdb setup` stage it into the distro.
+    # which finds nothing for someone who installed odb rather than cloning the
+    # repo -- so ship the context and let `odb setup` stage it into the distro.
     # tar.exe is built into Windows 10 1803+ and Windows 11.
     New-Item -ItemType Directory -Force -Path "$Prefix\docker-context" | Out-Null
-    Get-File (Get-VdbAsset 'vectoradb-docker-context.tar.gz') "$Prefix\docker-context.tar.gz" | Out-Null
-    Assert-VdbChecksum "$Prefix\docker-context.tar.gz" 'vectoradb-docker-context.tar.gz'
+    Get-File (Get-OdbAsset 'oxyndb-docker-context.tar.gz') "$Prefix\docker-context.tar.gz" | Out-Null
+    Assert-OdbChecksum "$Prefix\docker-context.tar.gz" 'oxyndb-docker-context.tar.gz'
     & tar.exe -xzf "$Prefix\docker-context.tar.gz" -C "$Prefix\docker-context"
     if ($LASTEXITCODE -ne 0) { throw "could not expand the image build context (tar.exe failed)" }
     Remove-Item "$Prefix\docker-context.tar.gz" -Force
 
     # 3. The distro. Preferred: our prebuilt image, which already contains
-    #    Docker, the btrfs tools, the engine and the container images, so `vdb
+    #    Docker, the btrfs tools, the engine and the container images, so `odb
     #    setup` skips an apt install, a docker build and three registry pulls.
     #    It is bigger (~685 MB vs ~340 MB) but turns setup from many minutes of
     #    network-dependent work into an import. Releases that don't publish it,
     #    or a copy that cannot be verified, fall back to the Ubuntu rootfs.
-    $distro = "$Prefix\vectoradb-distro.tar.gz"
+    $distro = "$Prefix\oxyndb-distro.tar.gz"
     $haveDistro = $false
     if (Test-Path $distro) {
-        if (Test-VdbChecksum $distro 'vectoradb-distro.tar.gz') {
-            Write-Step "VectoraDB distro image already downloaded"
+        if (Test-OdbChecksum $distro 'oxyndb-distro.tar.gz') {
+            Write-Step "OxynDB distro image already downloaded"
             $haveDistro = $true
         } else {
             Remove-Item $distro -Force -ErrorAction SilentlyContinue
         }
     }
     if (-not $haveDistro) {
-        Write-Step "Downloading the VectoraDB distro image (~685 MB, one time)"
-        if (Get-File (Get-VdbAsset 'vectoradb-distro.tar.gz') $distro -Required:$false) {
+        Write-Step "Downloading the OxynDB distro image (~685 MB, one time)"
+        if (Get-File (Get-OdbAsset 'oxyndb-distro.tar.gz') $distro -Required:$false) {
             try {
-                Assert-VdbChecksum $distro 'vectoradb-distro.tar.gz'
+                Assert-OdbChecksum $distro 'oxyndb-distro.tar.gz'
                 $haveDistro = $true
             } catch {
                 Remove-Item $distro -Force -ErrorAction SilentlyContinue
@@ -354,8 +354,8 @@ function Invoke-Install {
 
     if (-not $haveDistro) {
         # The Ubuntu rootfs. ~340 MB, so don't re-fetch a verified copy.
-        $rootfs = "$Prefix\vectoradb-rootfs.tar.gz"
-        $verify = -not $env:VDB_ROOTFS_URL
+        $rootfs = "$Prefix\oxyndb-rootfs.tar.gz"
+        $verify = -not $env:ODB_ROOTFS_URL
         if ((Test-Path $rootfs) -and $verify -and (Test-UpstreamChecksum $rootfs "$RootfsBase/SHA256SUMS" $RootfsName)) {
             Write-Step "Ubuntu rootfs already downloaded"
         } else {
@@ -365,29 +365,29 @@ function Invoke-Install {
         }
     }
 
-    # 4. PATH -- persisted for new shells, and live in this one so `vdb` works
-    #    immediately. Not doing the latter is why "vdb is not recognized" was
+    # 4. PATH -- persisted for new shells, and live in this one so `odb` works
+    #    immediately. Not doing the latter is why "odb is not recognized" was
     #    the single most common complaint.
-    Write-Step "Adding vdb to your PATH"
+    Write-Step "Adding odb to your PATH"
     Add-ToPath $Prefix | Out-Null
     if (($env:Path -split ';') -notcontains $Prefix) { $env:Path = "$env:Path;$Prefix" }
 
     # 5. Finish the job. An installer that stops here and tells the user to run
     #    another command is where most installs died.
-    if ($env:VDB_NO_SETUP) {
-        Write-Step "Skipping setup (VDB_NO_SETUP)"
+    if ($env:ODB_NO_SETUP) {
+        Write-Step "Skipping setup (ODB_NO_SETUP)"
         Write-Host ""
-        Write-Host "Installed. Run:  vdb setup" -ForegroundColor Green
+        Write-Host "Installed. Run:  odb setup" -ForegroundColor Green
         return
     }
-    Write-Step "Setting up VectoraDB (first run sets up the database engine)"
+    Write-Step "Setting up OxynDB (first run sets up the database engine)"
     Write-Host ""
-    & "$Prefix\vdb.exe" setup
+    & "$Prefix\odb.exe" setup
     if ($LASTEXITCODE -ne 0) {
-        throw "vdb setup failed. See $Prefix\install.log, then re-run:  vdb setup"
+        throw "odb setup failed. See $Prefix\install.log, then re-run:  odb setup"
     }
 
-    # `vdb setup` already printed the "VectoraDB is running" summary, including
+    # `odb setup` already printed the "OxynDB is running" summary, including
     # the connection string with the API key. Repeating it here only made the
     # install end with two near-identical blocks, so add the one thing the
     # engine cannot know: where this installer put its log.

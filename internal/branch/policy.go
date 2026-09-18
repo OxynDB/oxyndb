@@ -10,7 +10,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/vectoradb/vectoradb/internal/ledger"
+	"github.com/oxyndb/oxyndb/internal/ledger"
 )
 
 // Blackbox policy gate: rules checked on every DDL statement before it runs,
@@ -75,20 +75,20 @@ func sqlTextOrNull(p *string) string {
 
 func policyActor(actor string) string {
 	if actor == "" {
-		return "vdb"
+		return "odb"
 	}
 	return actor
 }
 
-// Rule changes run in one psql -c transaction that first sets vdb.actor, which
+// Rule changes run in one psql -c transaction that first sets odb.actor, which
 // the rule-history trigger records.
 func withActor(actor, sql string) string {
-	return fmt.Sprintf("SELECT set_config('vdb.actor', %s, true) IS NOT NULL;\n%s", quoteLiteral(policyActor(actor)), sql)
+	return fmt.Sprintf("SELECT set_config('odb.actor', %s, true) IS NOT NULL;\n%s", quoteLiteral(policyActor(actor)), sql)
 }
 
 func addRuleSQL(r PolicyRule, actor string) string {
 	return withActor(actor, fmt.Sprintf(`WITH ins AS (
-  INSERT INTO vdb.policy_rules (rule_id, command_tag, pattern, action, reason, hint, enabled, updated_by)
+  INSERT INTO odb.policy_rules (rule_id, command_tag, pattern, action, reason, hint, enabled, updated_by)
   VALUES (%s, %s, %s, %s, %s, %s, true, %s)
   ON CONFLICT (rule_id) DO NOTHING RETURNING rule_id)
 SELECT 'added' FROM ins;`,
@@ -105,16 +105,16 @@ func updateRuleSQL(ruleID string, action *string, enabled *bool, actor string) s
 		e = fmt.Sprintf("%t", *enabled)
 	}
 	return withActor(actor, fmt.Sprintf(`WITH u AS (
-  UPDATE vdb.policy_rules SET action = coalesce(%s, action), enabled = coalesce(%s, enabled),
+  UPDATE odb.policy_rules SET action = coalesce(%s, action), enabled = coalesce(%s, enabled),
          updated_at = clock_timestamp(), updated_by = %s
   WHERE rule_id = %s RETURNING 1)
 SELECT 'updated' FROM u;`, a, e, quoteLiteral(policyActor(actor)), quoteLiteral(ruleID)))
 }
 
 func removeRuleSQL(ruleID, actor string) string {
-	return withActor(actor, fmt.Sprintf(`WITH d AS (DELETE FROM vdb.policy_rules WHERE rule_id = %[1]s AND NOT builtin RETURNING 1)
+	return withActor(actor, fmt.Sprintf(`WITH d AS (DELETE FROM odb.policy_rules WHERE rule_id = %[1]s AND NOT builtin RETURNING 1)
 SELECT 'removed' FROM d
-UNION ALL SELECT 'builtin' FROM vdb.policy_rules WHERE rule_id = %[1]s AND builtin;`, quoteLiteral(ruleID)))
+UNION ALL SELECT 'builtin' FROM odb.policy_rules WHERE rule_id = %[1]s AND builtin;`, quoteLiteral(ruleID)))
 }
 
 // friendlyPolicyErr turns database errors into messages a person can act on.
@@ -123,10 +123,10 @@ func friendlyPolicyErr(name string, err error) error {
 	switch {
 	case strings.Contains(s, "policy_rules_pattern_check"):
 		return fmt.Errorf("%w: invalid pattern — it must be a valid PostgreSQL regular expression", ErrInvalidRequest)
-	case strings.Contains(s, "vdb.policy_rules") && strings.Contains(s, "does not exist"),
-		strings.Contains(s, "vdb.ledger_policy_evaluations") && strings.Contains(s, "does not exist"),
-		strings.Contains(s, "function vdb.policy_check") && strings.Contains(s, "does not exist"):
-		return fmt.Errorf("the Blackbox policy gate isn't installed on %q — run: vdb blackbox upgrade %s", name, name)
+	case strings.Contains(s, "odb.policy_rules") && strings.Contains(s, "does not exist"),
+		strings.Contains(s, "odb.ledger_policy_evaluations") && strings.Contains(s, "does not exist"),
+		strings.Contains(s, "function odb.policy_check") && strings.Contains(s, "does not exist"):
+		return fmt.Errorf("the Blackbox policy gate isn't installed on %q — run: odb blackbox upgrade %s", name, name)
 	}
 	return err
 }
@@ -157,7 +157,7 @@ func PolicyRules(name string) ([]PolicyRule, error) {
 	lines, err := policyLines(name, `SELECT row_to_json(r) FROM (
   SELECT rule_id, command_tag, pattern, action, reason, hint, enabled, builtin,
          to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at, updated_by
-  FROM vdb.policy_rules ORDER BY rule_id) r`)
+  FROM odb.policy_rules ORDER BY rule_id) r`)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +230,7 @@ func RemovePolicyRule(name, ruleID, actor string) error {
 	case hasLine(lines, "removed"):
 		return nil
 	case hasLine(lines, "builtin"):
-		return fmt.Errorf("%w — disable it instead: vdb policy disable %s", ErrBuiltinRule, ruleID)
+		return fmt.Errorf("%w — disable it instead: odb policy disable %s", ErrBuiltinRule, ruleID)
 	}
 	return fmt.Errorf("%w: %q", ErrRuleNotFound, ruleID)
 }
@@ -246,7 +246,7 @@ func PolicyCheck(name, statement string) (string, []ledger.PolicyDetail, error) 
 	if tag == "" {
 		return "", nil, fmt.Errorf("%w: sql is required", ErrInvalidRequest)
 	}
-	lines, err := policyLines(name, fmt.Sprintf("SELECT vdb.policy_check(%s, %s)::text", quoteLiteral(tag), quoteLiteral(statement)))
+	lines, err := policyLines(name, fmt.Sprintf("SELECT odb.policy_check(%s, %s)::text", quoteLiteral(tag), quoteLiteral(statement)))
 	if err != nil {
 		return "", nil, err
 	}
@@ -279,7 +279,7 @@ func PolicyEvaluations(name string, limit int) ([]PolicyEvaluation, error) {
 	lines, err := policyLines(name, fmt.Sprintf(`SELECT row_to_json(e) FROM (
   SELECT id, to_char(at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS at, xid, rule_id, action,
          command_tag, actor, blackbox_id
-  FROM vdb.ledger_policy_evaluations ORDER BY id DESC LIMIT %d) e`, limit))
+  FROM odb.ledger_policy_evaluations ORDER BY id DESC LIMIT %d) e`, limit))
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +298,7 @@ func PolicyEvaluations(name string, limit int) ([]PolicyEvaluation, error) {
 }
 
 // IsAdmin reports whether the login role for email is a superuser or a member
-// of vdb_admin on a branch.
+// of odb_admin on a branch.
 func IsAdmin(name, email string) (bool, error) {
 	name, err := ledgerBranchName(name)
 	if err != nil {
@@ -307,8 +307,8 @@ func IsAdmin(name, email string) (bool, error) {
 	if email == "" {
 		return false, nil
 	}
-	lines, err := ledgerLines(name, fmt.Sprintf(`SELECT CASE WHEN to_regrole('vdb_admin') IS NULL THEN false ELSE
-  coalesce((SELECT rolsuper OR pg_has_role(oid, 'vdb_admin', 'MEMBER') FROM pg_roles WHERE rolname = %s), false) END`,
+	lines, err := ledgerLines(name, fmt.Sprintf(`SELECT CASE WHEN to_regrole('odb_admin') IS NULL THEN false ELSE
+  coalesce((SELECT rolsuper OR pg_has_role(oid, 'odb_admin', 'MEMBER') FROM pg_roles WHERE rolname = %s), false) END`,
 		quoteLiteral(email)))
 	if err != nil {
 		return false, err

@@ -5,7 +5,7 @@ package main
 import (
 	"testing"
 
-	"github.com/vectoradb/vectoradb/internal/host"
+	"github.com/oxyndb/oxyndb/internal/host"
 )
 
 func TestParseUpdateArgs(t *testing.T) {

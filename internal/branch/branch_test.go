@@ -38,9 +38,9 @@ func TestDSN(t *testing.T) {
 	t.Setenv("HOME", t.TempDir()) // isolate the generated secrets file from the dev's home
 	got := dsn("172.18.0.5", "5432")
 	// The password is a per-install secret, so assert the shape, not the value.
-	if !strings.HasPrefix(got, "postgresql://vectoradb:") ||
-		!strings.HasSuffix(got, "@172.18.0.5:5432/vectoradb") {
-		t.Errorf("dsn = %q, want postgresql://vectoradb:<pw>@172.18.0.5:5432/vectoradb", got)
+	if !strings.HasPrefix(got, "postgresql://oxyndb:") ||
+		!strings.HasSuffix(got, "@172.18.0.5:5432/oxyndb") {
+		t.Errorf("dsn = %q, want postgresql://oxyndb:<pw>@172.18.0.5:5432/oxyndb", got)
 	}
 }
 
@@ -51,7 +51,7 @@ func TestAgentBranchName(t *testing.T) {
 }
 
 func TestContainerName(t *testing.T) {
-	if got := container("main"); got != "vec-main" {
-		t.Errorf("container = %q, want vec-main", got)
+	if got := container("main"); got != "oxyn-main" {
+		t.Errorf("container = %q, want oxyn-main", got)
 	}
 }

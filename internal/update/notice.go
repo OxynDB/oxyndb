@@ -12,12 +12,12 @@ import (
 	"time"
 )
 
-// EnvNoCheck turns off the check `vdb start` makes for a newer release.
-const EnvNoCheck = "VECTORADB_NO_UPDATE_CHECK"
+// EnvNoCheck turns off the check `odb start` makes for a newer release.
+const EnvNoCheck = "OXYNDB_NO_UPDATE_CHECK"
 
 // EnvCheckInterval is how long a newer release found by a start-time check is
 // remembered (default 6h; 0 means check on every start).
-const EnvCheckInterval = "VECTORADB_UPDATE_CHECK_INTERVAL"
+const EnvCheckInterval = "OXYNDB_UPDATE_CHECK_INTERVAL"
 
 // CheckInterval reads EnvCheckInterval.
 func CheckInterval(getenv func(string) string) time.Duration {
@@ -46,7 +46,7 @@ type noticeCache struct {
 // Only a found release counts. "Up to date" is never an answer to reuse: a
 // release published a minute later would stay invisible for the whole interval
 // (with the 6h default, a release went unannounced for hours while
-// `vdb update --check` saw it). Files written before this rule may still hold
+// `odb update --check` saw it). Files written before this rule may still hold
 // an empty notice; they are ignored rather than trusted.
 func (c *Client) cachedNotice(current string, within time.Duration) (string, bool) {
 	if c.NoticePath == "" || within <= 0 {
@@ -90,7 +90,7 @@ func truthy(v string) bool {
 	return false
 }
 
-// ShouldCheck reports whether `vdb start` should look for a newer release: not
+// ShouldCheck reports whether `odb start` should look for a newer release: not
 // when turned off, and not for development builds.
 func ShouldCheck(getenv func(string) string, current string) bool {
 	if truthy(getenv(EnvNoCheck)) {
@@ -100,18 +100,18 @@ func ShouldCheck(getenv func(string) string, current string) bool {
 	return err == nil && !v.IsDev()
 }
 
-// CheckTimeout is how long `vdb start` waits for the check
-// (VECTORADB_UPDATE_CHECK_TIMEOUT, default 1.5s).
+// CheckTimeout is how long `odb start` waits for the check
+// (OXYNDB_UPDATE_CHECK_TIMEOUT, default 1.5s).
 func CheckTimeout(getenv func(string) string) time.Duration {
-	if d, err := time.ParseDuration(strings.TrimSpace(getenv("VECTORADB_UPDATE_CHECK_TIMEOUT"))); err == nil && d > 0 {
+	if d, err := time.ParseDuration(strings.TrimSpace(getenv("OXYNDB_UPDATE_CHECK_TIMEOUT"))); err == nil && d > 0 {
 		return d
 	}
 	return 1500 * time.Millisecond
 }
 
-// Notice is the one line `vdb start` prints when a newer release is available.
+// Notice is the one line `odb start` prints when a newer release is available.
 func Notice(current string, o *Offer) string {
-	return fmt.Sprintf("VectoraDB %s is available (you have %s). Run `vdb update` to get the new capabilities.", o.Release.Tag, current)
+	return fmt.Sprintf("OxynDB %s is available (you have %s). Run `odb update` to get the new capabilities.", o.Release.Tag, current)
 }
 
 // BackgroundCheck starts looking for a newer release and returns a function

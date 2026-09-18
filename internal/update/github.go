@@ -17,10 +17,10 @@ import (
 )
 
 const (
-	// DefaultBaseURL is the GitHub API. VDB_UPDATE_BASE_URL points elsewhere (tests).
+	// DefaultBaseURL is the GitHub API. ODB_UPDATE_BASE_URL points elsewhere (tests).
 	DefaultBaseURL = "https://api.github.com"
-	// DefaultRepo matches the installers; VDB_REPO overrides it.
-	DefaultRepo = "vectoradb/vectoraDB"
+	// DefaultRepo matches the installers; ODB_REPO overrides it.
+	DefaultRepo = "oxyndb/oxynDB"
 )
 
 // Asset is one file attached to a release.
@@ -58,13 +58,13 @@ type Client struct {
 	NoticePath string // optional: remembers the last start-time check (see BackgroundCheck)
 }
 
-// NewClient builds a client from the environment (VDB_UPDATE_BASE_URL, VDB_REPO).
+// NewClient builds a client from the environment (ODB_UPDATE_BASE_URL, ODB_REPO).
 func NewClient(getenv func(string) string, cachePath string) *Client {
-	base := strings.TrimRight(strings.TrimSpace(getenv("VDB_UPDATE_BASE_URL")), "/")
+	base := strings.TrimRight(strings.TrimSpace(getenv("ODB_UPDATE_BASE_URL")), "/")
 	if base == "" {
 		base = DefaultBaseURL
 	}
-	repo := strings.TrimSpace(getenv("VDB_REPO"))
+	repo := strings.TrimSpace(getenv("ODB_REPO"))
 	if repo == "" {
 		repo = DefaultRepo
 	}
@@ -87,7 +87,7 @@ func (c *Client) request(ctx context.Context, url string) (*http.Request, error)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "vdb-updater")
+	req.Header.Set("User-Agent", "odb-updater")
 	return req, nil
 }
 

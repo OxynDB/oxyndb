@@ -1,6 +1,6 @@
 # Security Policy
 
-VectoraDB is pre-1.0. We take security seriously and would rather hear about a
+OxynDB is pre-1.0. We take security seriously and would rather hear about a
 problem privately than read about it publicly.
 
 ## Reporting a vulnerability
@@ -34,7 +34,7 @@ anywhere in the repository are welcome.
 
 ## Known posture
 
-VectoraDB is designed to run on infrastructure you control. Until the pre-1.0
+OxynDB is designed to run on infrastructure you control. Until the pre-1.0
 hardening is complete, treat a deployment as trusted-network. Progress on
 transport encryption, per-install credentials, and ledger tamper-evidence is
 tracked in the roadmap.

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package auth gates VectoraDB's surfaces. It stores users, API keys, sessions,
+// Package auth gates OxynDB's surfaces. It stores users, API keys, sessions,
 // and OAuth identities in a local SQLite file (pure-Go driver, no cgo) and
 // provides an HTTP middleware plus login/OAuth/API-key handlers. Scope is
-// single-tenant: authenticated users share one VectoraDB instance.
+// single-tenant: authenticated users share one OxynDB instance.
 package auth
 
 import (
@@ -105,12 +105,12 @@ func Open(cfg Config) (*Store, error) {
 
 // initSchema creates and migrates the store.
 //
-// `vdb start` launches the control plane, the Gateway and the Agent API
+// `odb start` launches the control plane, the Gateway and the Agent API
 // together, and on a new install all three create this file at the same
 // moment. SQLite answers SQLITE_BUSY immediately — without waiting out
 // busy_timeout — when two connections that began by reading both try to
 // write, and while one process switches the file to WAL. The losers exited,
-// so the first `vdb start` of a new install left the control plane and the
+// so the first `odb start` of a new install left the control plane and the
 // Agent API down (found by running the integration suites on a fresh VM).
 //
 // So the work runs in BEGIN IMMEDIATE, which takes the write lock before
@@ -220,35 +220,35 @@ const DefaultPublicURL = "https://localhost:8080"
 // old defaults — http://localhost:8080 and the retired Vite dev server on
 // http://localhost:5173 — sent an OAuth login back to a page that doesn't exist
 // and registered a callback over plain HTTP. A separately hosted UI sets
-// VECTORADB_WEB_ORIGIN.
+// OXYNDB_WEB_ORIGIN.
 func urlDefaults(getenv func(string) string) (publicURL, webOrigin string) {
-	publicURL = strings.TrimRight(strings.TrimSpace(getenv("VECTORADB_PUBLIC_URL")), "/")
+	publicURL = strings.TrimRight(strings.TrimSpace(getenv("OXYNDB_PUBLIC_URL")), "/")
 	if publicURL == "" {
 		publicURL = DefaultPublicURL
 	}
-	webOrigin = strings.TrimRight(strings.TrimSpace(getenv("VECTORADB_WEB_ORIGIN")), "/")
+	webOrigin = strings.TrimRight(strings.TrimSpace(getenv("OXYNDB_WEB_ORIGIN")), "/")
 	if webOrigin == "" {
 		webOrigin = publicURL
 	}
 	return publicURL, webOrigin
 }
 
-// OpenFromEnv builds Config from VECTORADB_* env vars and opens the store.
+// OpenFromEnv builds Config from OXYNDB_* env vars and opens the store.
 func OpenFromEnv() (*Store, error) {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		home = "/tmp"
 	}
-	dir := filepath.Join(home, ".vectoradb")
+	dir := filepath.Join(home, ".oxyndb")
 	_ = os.MkdirAll(dir, 0o755)
 	public, web := urlDefaults(os.Getenv)
 	return Open(Config{
-		DBPath:     envOr("VECTORADB_DB", filepath.Join(dir, "vectoradb.db")),
+		DBPath:     envOr("OXYNDB_DB", filepath.Join(dir, "oxyndb.db")),
 		WebOrigin:  web,
 		PublicURL:  public,
-		SignupOpen: os.Getenv("VECTORADB_SIGNUP") != "closed",
-		GitHub:     OAuthApp{os.Getenv("VECTORADB_GITHUB_CLIENT_ID"), os.Getenv("VECTORADB_GITHUB_CLIENT_SECRET")},
-		Google:     OAuthApp{os.Getenv("VECTORADB_GOOGLE_CLIENT_ID"), os.Getenv("VECTORADB_GOOGLE_CLIENT_SECRET")},
+		SignupOpen: os.Getenv("OXYNDB_SIGNUP") != "closed",
+		GitHub:     OAuthApp{os.Getenv("OXYNDB_GITHUB_CLIENT_ID"), os.Getenv("OXYNDB_GITHUB_CLIENT_SECRET")},
+		Google:     OAuthApp{os.Getenv("OXYNDB_GOOGLE_CLIENT_ID"), os.Getenv("OXYNDB_GOOGLE_CLIENT_SECRET")},
 	})
 }
 
@@ -372,7 +372,7 @@ func (s *Store) CreateScopedAPIKey(userID int64, name, scope string) (string, Ke
 		name = "key"
 	}
 	scope = strings.TrimSpace(scope)
-	secret := "vdb_" + randToken(24)
+	secret := "odb_" + randToken(24)
 	id := randToken(8)
 	prefix := secret[:12]
 	now := time.Now().Unix()

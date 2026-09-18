@@ -10,10 +10,10 @@ import (
 	"os/exec"
 	"runtime"
 
-	"github.com/vectoradb/vectoradb/internal/update"
+	"github.com/oxyndb/oxyndb/internal/update"
 )
 
-// localEngine updates a Linux install, where `vdb` is the engine itself.
+// localEngine updates a Linux install, where `odb` is the engine itself.
 type localEngine struct{}
 
 func newEngineHost() engineHost { return localEngine{} }

@@ -9,8 +9,8 @@ import (
 )
 
 // actor_kind must be derived from the login role, not read from the session.
-// vdb.actor_kind is an ordinary session setting, so while _ctx believed it a
-// client could `SET vdb.actor_kind = 'human'` and have an agent's changes
+// odb.actor_kind is an ordinary session setting, so while _ctx believed it a
+// client could `SET odb.actor_kind = 'human'` and have an agent's changes
 // recorded as a person's — the one thing this record exists to prevent. The
 // behaviour itself is proved in integration-v2 §1c (a human claiming to be an
 // agent and an agent claiming to be human are both recorded truthfully); this
@@ -26,7 +26,7 @@ func TestActorKindDerivedFromRole(t *testing.T) {
 		// address happens to start with "agent-").
 		"position('@' in session_user) = 0",
 		// A per-user role is a person.
-		"WHEN session_user NOT IN ('vectoradb','vdbclient') THEN 'human'",
+		"WHEN session_user NOT IN ('oxyndb','odbclient') THEN 'human'",
 	} {
 		if !strings.Contains(ctx, want) {
 			t.Errorf("_ctx no longer derives the kind from the role: missing %q", want)
@@ -35,28 +35,28 @@ func TestActorKindDerivedFromRole(t *testing.T) {
 
 	// The injected setting may only be consulted for the shared roles, which
 	// have no identity of their own — never as the first answer.
-	kindLine := regexp.MustCompile(`(?s)OUT actor_kind.*?current_setting\('vdb\.actor_kind'`)
+	kindLine := regexp.MustCompile(`(?s)OUT actor_kind.*?current_setting\('odb\.actor_kind'`)
 	if !kindLine.MatchString(ctx) {
-		t.Fatal("_ctx does not mention vdb.actor_kind at all; expected it as the shared-role fallback")
+		t.Fatal("_ctx does not mention odb.actor_kind at all; expected it as the shared-role fallback")
 	}
-	before, _, _ := strings.Cut(ctx, "current_setting('vdb.actor_kind'")
+	before, _, _ := strings.Cut(ctx, "current_setting('odb.actor_kind'")
 	if !strings.Contains(before, "session_user LIKE 'agent-%'") {
 		t.Error("the session setting is consulted before the role is examined")
 	}
 }
 
-// ctxFunction returns the body of vdb._ctx from the embedded schema.
+// ctxFunction returns the body of odb._ctx from the embedded schema.
 func ctxFunction(t *testing.T) string {
 	t.Helper()
-	const marker = "CREATE OR REPLACE FUNCTION vdb._ctx("
+	const marker = "CREATE OR REPLACE FUNCTION odb._ctx("
 	i := strings.Index(Schema, marker)
 	if i < 0 {
-		t.Fatal("vdb._ctx is not in the schema")
+		t.Fatal("odb._ctx is not in the schema")
 	}
 	rest := Schema[i:]
 	end := strings.Index(rest, "$$;")
 	if end < 0 {
-		t.Fatal("vdb._ctx has no end")
+		t.Fatal("odb._ctx has no end")
 	}
 	return rest[:end]
 }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Command vdb is the control CLI for the VectoraDB serverless-Postgres
+// Command odb is the control CLI for the OxynDB serverless-Postgres
 // platform. It runs inside the Linux dev VM (ZFS + Docker) and manages the
 // unified stack: object storage (MinIO), the primary Postgres ("main") with WAL
 // archiving, point-in-time restore, and instant copy-on-write branches.
@@ -18,16 +18,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vectoradb/vectoradb/internal/agentapi"
-	"github.com/vectoradb/vectoradb/internal/auth"
-	"github.com/vectoradb/vectoradb/internal/branch"
-	"github.com/vectoradb/vectoradb/internal/controlplane"
-	"github.com/vectoradb/vectoradb/internal/daemon"
-	"github.com/vectoradb/vectoradb/internal/host"
-	"github.com/vectoradb/vectoradb/internal/mcp"
-	"github.com/vectoradb/vectoradb/internal/proxy"
-	"github.com/vectoradb/vectoradb/internal/version"
-	"github.com/vectoradb/vectoradb/web"
+	"github.com/oxyndb/oxyndb/internal/agentapi"
+	"github.com/oxyndb/oxyndb/internal/auth"
+	"github.com/oxyndb/oxyndb/internal/branch"
+	"github.com/oxyndb/oxyndb/internal/controlplane"
+	"github.com/oxyndb/oxyndb/internal/daemon"
+	"github.com/oxyndb/oxyndb/internal/host"
+	"github.com/oxyndb/oxyndb/internal/mcp"
+	"github.com/oxyndb/oxyndb/internal/proxy"
+	"github.com/oxyndb/oxyndb/internal/version"
+	"github.com/oxyndb/oxyndb/web"
 )
 
 // background services managed by `start`/`stop` (name -> subcommand + flags).
@@ -37,10 +37,10 @@ var services = map[string][]string{
 	"api":          {"serve", "--addr", ":8088"},
 }
 
-const usage = `VectoraDB — serverless Postgres control CLI
+const usage = `OxynDB — serverless Postgres control CLI
 
 Usage:
-  vdb <command> [args]
+  odb <command> [args]
 
 Setup:
   setup                One-time: create/start the local engine VM (macOS: Lima, Windows: WSL2) and bring the stack up
@@ -71,23 +71,23 @@ Branching:
   branch resume <name>  Start a suspended branch
   branch diff <a> <b>   Schema changes made on each branch since they split (from Blackbox; --json)
 
-Blackbox — the database's record of every schema change (RECORD layer; vdb ledger … works too):
+Blackbox — the database's record of every schema change (RECORD layer; odb ledger … works too):
   blackbox [branch] [--limit N]   Show captured DDL changes — attributed & policy-checked
   blackbox verify [branch]        Verify the tamper-evident hash chain is intact
   blackbox upgrade [branch|--all] Apply the current Blackbox definition to existing branches
   blackbox checkpoint [branch]    Anchor new entries outside the database (Merkle checkpoint)
   blackbox integrity [branch]     Check the record against its anchors (detects rewritten history)
-  blackbox export [branch]        Write every entry as JSON lines (for vdb-verify / audits)
+  blackbox export [branch]        Write every entry as JSON lines (for odb-verify / audits)
   blackbox entries [branch]       Newest entries with their ids (--limit N)
   blackbox sessions [branch]      Agent sessions: agent, task, parent session, entries (--limit N)
   blackbox diff <a> <b>           Changes on each branch since they split, and objects both changed (--json)
   blackbox branch-before <id>     New branch of main as it was just before entry <id> (--as name)
-  blackbox revert --to <ts>       Point-in-time restore of main into a disposable container on :5433 (same as vdb restore)
+  blackbox revert --to <ts>       Point-in-time restore of main into a disposable container on :5433 (same as odb restore)
 
 Blackbox policy gate — checks every schema change before it runs (docs/policy-errors.md):
   policy [list] [--branch b]      Show the rules: action (warn|block) and whether enabled
   policy check "<SQL>"            Preview the rules a statement would trigger (exit 1 if one blocks)
-  policy block|warn <rule>        Refuse matching changes (VDB01) or only warn about them (VDB02)
+  policy block|warn <rule>        Refuse matching changes (ODB01) or only warn about them (ODB02)
   policy enable|disable <rule>    Turn a rule on or off
   policy add <rule> --command "ALTER TABLE" [--pattern <regex>] [--block] --reason "…" [--hint "…"]
   policy remove <rule>            Remove a rule you added (built-in rules can only be disabled)
@@ -124,9 +124,9 @@ Serverless front door:
 
 Agent Branch API:
   serve [--addr :8088] Run the HTTP API: one database branch per AI agent
-  mcp [--key <vdb_…>]  Run the MCP server on stdio: an agent framework gets a database,
+  mcp [--key <odb_…>]  Run the MCP server on stdio: an agent framework gets a database,
                        runs SQL, sees what it changed (Blackbox), and throws it away.
-                       Needs an API key (VECTORADB_API_KEY or --key); a key scoped
+                       Needs an API key (OXYNDB_API_KEY or --key); a key scoped
                        to one branch limits the server to that branch
 
 Auth (admin):
@@ -138,7 +138,7 @@ Auth (admin):
   admin revoke <email> [--branch <name>]  Remove that permission
   admin list [--branch <name>]            Show who may override (default: main + running branches)
 
-  version              Print the vdb version
+  version              Print the odb version
 `
 
 func main() {
@@ -148,7 +148,7 @@ func main() {
 	}
 
 	// On macOS/Windows, forward engine commands into the managed Linux VM so the
-	// user only ever runs `vdb …`. On Linux (or inside the VM) this is a no-op.
+	// user only ever runs `odb …`. On Linux (or inside the VM) this is a no-op.
 	if handled, err := host.Maybe(os.Args[1:]); handled {
 		must(err)
 		return
@@ -156,7 +156,7 @@ func main() {
 
 	switch os.Args[1] {
 	case "version", "-v", "--version":
-		fmt.Printf("vdb %s\n", version.Version)
+		fmt.Printf("odb %s\n", version.Version)
 	case "setup":
 		must(host.Setup())
 	case "vm":
@@ -165,7 +165,7 @@ func main() {
 		// Linux host: look for a newer release while the stack starts. (macOS and
 		// Windows check on the host before forwarding; the guest never checks.)
 		notice := func() {}
-		if os.Getenv("VECTORADB_IN_GUEST") == "" {
+		if os.Getenv("OXYNDB_IN_GUEST") == "" {
 			notice = host.StartUpdateNotice()
 		}
 		must(branch.Up())
@@ -173,27 +173,27 @@ func main() {
 			must(daemon.Start(name, args))
 		}
 		apiKey := bootstrapLocalKey()
-		fmt.Println("\nVectoraDB is up (background):")
+		fmt.Println("\nOxynDB is up (background):")
 		if web.FS() != nil {
 			fmt.Println("  web UI       https://localhost:8080")
 		}
 		fmt.Println("  control API  https://localhost:8080/api/status")
 		fmt.Println("  agent API    https://localhost:8088   (POST /agents/{id}/branch)")
 		if apiKey != "" {
-			fmt.Printf("  gateway(SQL) postgresql://vectoradb:%s@localhost:6432/main?sslmode=require\n", apiKey)
+			fmt.Printf("  gateway(SQL) postgresql://oxyndb:%s@localhost:6432/main?sslmode=require\n", apiKey)
 		} else {
-			fmt.Println("  gateway(SQL) postgresql://vectoradb:<API_KEY>@localhost:6432/<branch>?sslmode=require")
+			fmt.Println("  gateway(SQL) postgresql://oxyndb:<API_KEY>@localhost:6432/<branch>?sslmode=require")
 		}
-		fmt.Println("  storage      http://localhost:9001   (console login in ~/.vectoradb/secrets.json)")
+		fmt.Println("  storage      http://localhost:9001   (console login in ~/.oxyndb/secrets.json)")
 		if web.FS() == nil {
 			fmt.Println("\nThe web UI isn't embedded in this build — run it with:  make web-dev   (http://localhost:5173)")
 		}
-		fmt.Println("\nThe connection string above uses a ready-to-go API key (also saved in ~/.vectoradb/config).")
-		fmt.Println("Stop everything with: vdb stop")
+		fmt.Println("\nThe connection string above uses a ready-to-go API key (also saved in ~/.oxyndb/config).")
+		fmt.Println("Stop everything with: odb stop")
 		notice()
 	case "update":
 		updateCmd(os.Args[2:])
-	case "_update-guest": // the engine-side steps of `vdb update`
+	case "_update-guest": // the engine-side steps of `odb update`
 		updateGuestCmd(os.Args[2:])
 	case "stop":
 		for name := range services {
@@ -230,7 +230,7 @@ func main() {
 		must(branch.PsqlShell("main"))
 	case "backup":
 		if len(os.Args) < 3 {
-			fmt.Println("usage: vdb backup <create|list>")
+			fmt.Println("usage: odb backup <create|list>")
 			os.Exit(2)
 		}
 		switch os.Args[2] {
@@ -245,7 +245,7 @@ func main() {
 	case "restore":
 		ts := restoreArg(os.Args[2:])
 		if ts == "" {
-			fmt.Println("usage: vdb restore --to '<timestamp>'|latest")
+			fmt.Println("usage: odb restore --to '<timestamp>'|latest")
 			os.Exit(2)
 		}
 		must(branch.Restore(ts))
@@ -259,7 +259,7 @@ func main() {
 		importCmd(os.Args[2:])
 	case "import-cutover":
 		if len(os.Args) < 3 {
-			fmt.Println("usage: vdb import-cutover <instance>")
+			fmt.Println("usage: odb import-cutover <instance>")
 			os.Exit(2)
 		}
 		must(branch.ImportCutover(os.Args[2]))
@@ -269,7 +269,7 @@ func main() {
 		haCmd(os.Args[2:])
 	case "user":
 		if len(os.Args) < 4 || os.Args[2] != "create" {
-			fmt.Println("usage: vdb user create <email>")
+			fmt.Println("usage: odb user create <email>")
 			os.Exit(2)
 		}
 		must(userCreate(os.Args[3]))
@@ -297,15 +297,15 @@ func main() {
 	}
 }
 
-// mcpKey is the API key `vdb mcp` acts as: `--key <vdb_…>`, else
-// VECTORADB_API_KEY. A key on the command line is visible in the process list,
+// mcpKey is the API key `odb mcp` acts as: `--key <odb_…>`, else
+// OXYNDB_API_KEY. A key on the command line is visible in the process list,
 // so the environment variable is what a client config should use -- but the
 // flag stays, for trying the server by hand.
 func mcpKey(args []string) string {
 	if k := optValue(args, "--key"); k != "" {
 		return k
 	}
-	return os.Getenv("VECTORADB_API_KEY")
+	return os.Getenv("OXYNDB_API_KEY")
 }
 
 // restoreArg accepts either `--to <ts>` or a bare `<ts>`.
@@ -322,8 +322,8 @@ func restoreArg(args []string) string {
 	return args[0]
 }
 
-// importCmd handles `vdb import --from <source> [--as <instance>]`, migrating a
-// Postgres source or a .sql/.csv/.json file into a fresh VectoraDB instance.
+// importCmd handles `odb import --from <source> [--as <instance>]`, migrating a
+// Postgres source or a .sql/.csv/.json file into a fresh OxynDB instance.
 func importCmd(args []string) {
 	var source, target, kind, srcname string
 	var continuous bool
@@ -354,7 +354,7 @@ func importCmd(args []string) {
 		}
 	}
 	if source == "" {
-		fmt.Println("usage: vdb import --from <postgres://… | file.sql|.csv|.json> [--as <instance>]")
+		fmt.Println("usage: odb import --from <postgres://… | file.sql|.csv|.json> [--as <instance>]")
 		os.Exit(2)
 	}
 	// A dash means the file is streamed on stdin (used when the launcher forwards
@@ -378,11 +378,11 @@ func importCmd(args []string) {
 	must(err)
 }
 
-// pipelineCmd handles `vdb pipeline run <spec.json> [--as <instance>]`: an ETL
+// pipelineCmd handles `odb pipeline run <spec.json> [--as <instance>]`: an ETL
 // pipeline (extract → land raw → SQL transforms → tests) into a fresh instance.
 func pipelineCmd(args []string) {
 	if len(args) < 2 || args[0] != "run" {
-		fmt.Println("usage: vdb pipeline run <spec.json> [--as <instance>]")
+		fmt.Println("usage: odb pipeline run <spec.json> [--as <instance>]")
 		os.Exit(2)
 	}
 	specPath, target := args[1], ""
@@ -405,8 +405,8 @@ func pipelineCmd(args []string) {
 	}
 }
 
-// ledgerCmd handles `vdb ledger [branch] [--limit N]` and
-// `vdb ledger revert --to <ts>` (a point-in-time restore of main, like `vdb restore`).
+// ledgerCmd handles `odb ledger [branch] [--limit N]` and
+// `odb ledger revert --to <ts>` (a point-in-time restore of main, like `odb restore`).
 func ledgerCmd(args []string) {
 	if ledgerV2Cmd(args) { // checkpoint, integrity, export
 		return
@@ -414,13 +414,13 @@ func ledgerCmd(args []string) {
 	if len(args) > 0 && args[0] == "revert" {
 		ts := restoreArg(args[1:])
 		if ts == "" {
-			fmt.Println("usage: vdb ledger revert --to '<timestamp>'|latest")
+			fmt.Println("usage: odb ledger revert --to '<timestamp>'|latest")
 			os.Exit(2)
 		}
-		fmt.Println("Restoring main to that moment in a disposable container on :5433 (the same as `vdb restore`).")
+		fmt.Println("Restoring main to that moment in a disposable container on :5433 (the same as `odb restore`).")
 		fmt.Println("Nothing is reverted: main and every branch stay as they are.")
 		must(branch.Restore(ts))
-		fmt.Println("For a branch holding main as it was just before a specific change: vdb blackbox branch-before <entry id>  (ids: vdb blackbox entries)")
+		fmt.Println("For a branch holding main as it was just before a specific change: odb blackbox branch-before <entry id>  (ids: odb blackbox entries)")
 		return
 	}
 	if len(args) > 0 && args[0] == "upgrade" {
@@ -473,17 +473,17 @@ func durFlag(args []string, name string, def time.Duration) time.Duration {
 	return def
 }
 
-// branchCmd dispatches `vdb branch <subcommand>`.
+// branchCmd dispatches `odb branch <subcommand>`.
 func branchCmd(args []string) {
 	if len(args) == 0 {
-		fmt.Println("usage: vdb branch <create|list|delete|reset|suspend|resume> [name]")
+		fmt.Println("usage: odb branch <create|list|delete|reset|suspend|resume> [name]")
 		os.Exit(2)
 	}
 	switch args[0] {
 	case "create":
 		name := firstPositional(args[1:], "--from")
 		if name == "" {
-			fmt.Println("usage: vdb branch create <name> [--from <branch>]")
+			fmt.Println("usage: odb branch create <name> [--from <branch>]")
 			os.Exit(2)
 		}
 		must(branch.Create(name, optValue(args[1:], "--from")))
@@ -491,13 +491,13 @@ func branchCmd(args []string) {
 		must(branch.List())
 	case "delete":
 		if len(args) < 2 {
-			fmt.Println("usage: vdb branch delete <name>")
+			fmt.Println("usage: odb branch delete <name>")
 			os.Exit(2)
 		}
 		must(branch.Delete(args[1]))
 	case "reset":
 		if len(args) < 2 {
-			fmt.Println("usage: vdb branch reset <name> [--from <parent>]")
+			fmt.Println("usage: odb branch reset <name> [--from <parent>]")
 			os.Exit(2)
 		}
 		parent := "main"
@@ -510,13 +510,13 @@ func branchCmd(args []string) {
 		must(branch.Reset(args[1], parent))
 	case "suspend":
 		if len(args) < 2 {
-			fmt.Println("usage: vdb branch suspend <name>")
+			fmt.Println("usage: odb branch suspend <name>")
 			os.Exit(2)
 		}
 		must(branch.Suspend(args[1]))
 	case "resume":
 		if len(args) < 2 {
-			fmt.Println("usage: vdb branch resume <name>")
+			fmt.Println("usage: odb branch resume <name>")
 			os.Exit(2)
 		}
 		must(branch.Wake(args[1]))
@@ -528,10 +528,10 @@ func branchCmd(args []string) {
 	}
 }
 
-// haCmd dispatches `vdb ha <subcommand>`.
+// haCmd dispatches `odb ha <subcommand>`.
 func haCmd(args []string) {
 	if len(args) == 0 {
-		fmt.Println("usage: vdb ha <enable|status|failover|disable|failback>")
+		fmt.Println("usage: odb ha <enable|status|failover|disable|failback>")
 		os.Exit(2)
 	}
 	switch args[0] {
@@ -564,19 +564,19 @@ func openStore() *auth.Store {
 	return s
 }
 
-func vectoradbDir() string {
+func oxyndbDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		home = os.TempDir()
 	}
-	return filepath.Join(home, ".vectoradb")
+	return filepath.Join(home, ".oxyndb")
 }
 
-func configPath() string { return filepath.Join(vectoradbDir(), "config") }
+func configPath() string { return filepath.Join(oxyndbDir(), "config") }
 
 // bootstrapLocalKey makes a fresh install usable with no manual account steps.
 // On first run it creates a local user and an API key, caching the key in
-// ~/.vectoradb/config so `vdb start` can always print a working connection
+// ~/.oxyndb/config so `odb start` can always print a working connection
 // string. Returns the API key, or "" if it can't be determined (in which case
 // the banner falls back to a <API_KEY> placeholder). Never fatal — a bootstrap
 // hiccup must not stop the stack from coming up.
@@ -595,7 +595,7 @@ func bootstrapLocalKey() string {
 	if _, err := rand.Read(pw); err != nil {
 		return ""
 	}
-	u, err := store.CreateUser("local@vectoradb", hex.EncodeToString(pw))
+	u, err := store.CreateUser("local@oxyndb", hex.EncodeToString(pw))
 	if err != nil {
 		return ""
 	}
@@ -607,7 +607,7 @@ func bootstrapLocalKey() string {
 	// The install's first user owns it, so it may override the destructive-DDL
 	// guardrail on main (and every branch cloned from it). Best-effort.
 	if err := branch.GrantAdmin("main", u.Email); err != nil {
-		fmt.Fprintln(os.Stderr, "note: could not grant vdb_admin to "+u.Email+":", err)
+		fmt.Fprintln(os.Stderr, "note: could not grant odb_admin to "+u.Email+":", err)
 	}
 	return key
 }
@@ -626,7 +626,7 @@ func readCachedKey() string {
 }
 
 func writeCachedKey(key string) {
-	_ = os.MkdirAll(vectoradbDir(), 0o700)
+	_ = os.MkdirAll(oxyndbDir(), 0o700)
 	_ = os.WriteFile(configPath(), []byte("api_key="+key+"\n"), 0o600)
 }
 
@@ -647,13 +647,13 @@ func userCreate(email string) error {
 
 func apikeyCmd(args []string) {
 	if len(args) < 2 {
-		fmt.Println("usage: vdb apikey <create|list|revoke> <email> [name|id]")
+		fmt.Println("usage: odb apikey <create|list|revoke> <email> [name|id]")
 		os.Exit(2)
 	}
 	s := openStore()
 	u, ok := s.UserByEmail(args[1])
 	if !ok {
-		must(fmt.Errorf("no such user: %s (create it with: vdb user create %s)", args[1], args[1]))
+		must(fmt.Errorf("no such user: %s (create it with: odb user create %s)", args[1], args[1]))
 	}
 	switch args[0] {
 	case "create":
@@ -676,7 +676,7 @@ func apikeyCmd(args []string) {
 		}
 	case "revoke":
 		if len(args) < 3 {
-			fmt.Println("usage: vdb apikey revoke <email> <id>")
+			fmt.Println("usage: odb apikey revoke <email> <id>")
 			os.Exit(2)
 		}
 		must(s.RevokeKey(u.ID, args[2]))

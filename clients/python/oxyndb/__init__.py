@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
-"""VectoraDB Python client — a thin, dependency-free wrapper over the
+"""OxynDB Python client — a thin, dependency-free wrapper over the
 control-plane REST API (see internal/controlplane/openapi.yaml).
 
-    from vectoradb import VectoraDB
-    db = VectoraDB(api_key="vdb_...", verify_tls=False)  # local self-signed cert
+    from oxyndb import OxynDB
+    db = OxynDB(api_key="odb_...", verify_tls=False)  # local self-signed cert
     db.create_branch("qa")
     print(db.query("qa", "select 1"))
 """
@@ -18,11 +18,11 @@ import urllib.request
 __version__ = "0.6.0"
 
 
-class VectoraDBError(Exception):
+class OxynDBError(Exception):
     """An API request failed (non-2xx response)."""
 
 
-class VectoraDB:
+class OxynDB:
     def __init__(
         self,
         api_key: str,
@@ -50,7 +50,7 @@ class VectoraDB:
                 return json.loads(raw) if raw else None
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", "replace")
-            raise VectoraDBError(f"{e.code} {e.reason}: {detail}") from None
+            raise OxynDBError(f"{e.code} {e.reason}: {detail}") from None
 
     # --- status & branches ---
     def status(self):

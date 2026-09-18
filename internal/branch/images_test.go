@@ -49,7 +49,7 @@ func TestMinioImagesArePinnedOffDockerHub(t *testing.T) {
 }
 
 // The Windows distro preloads the images the engine runs; if the names drift,
-// `vdb up` on Windows would try to pull at first start.
+// `odb up` on Windows would try to pull at first start.
 func TestDistroPreloadsTheEngineImages(t *testing.T) {
 	b, err := os.ReadFile("../../deploy/wsl-distro/build.sh")
 	if err != nil {

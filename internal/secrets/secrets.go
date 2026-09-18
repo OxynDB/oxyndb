@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package secrets holds the per-install credentials VectoraDB generates on first
+// Package secrets holds the per-install credentials OxynDB generates on first
 // run — the Postgres role password and the MinIO/object-store key pair — instead
 // of shipping hardcoded defaults in a public source tree.
 //
 // The values are generated once with crypto/rand, persisted 0600 under
-// ~/.vectoradb/secrets.json, and read by every process that needs them: the
+// ~/.oxyndb/secrets.json, and read by every process that needs them: the
 // engine (which sets them on the containers it starts) and the gateway (which
 // authenticates to the backend with the same Postgres password). Both run in the
-// same guest and share ~/.vectoradb, so they converge on one set. Environment
+// same guest and share ~/.oxyndb, so they converge on one set. Environment
 // variables override any field, for callers who manage their own secrets.
 package secrets
 
@@ -24,17 +24,17 @@ import (
 
 // Secrets is the per-install credential set.
 type Secrets struct {
-	PGPassword    string `json:"pg_password"`    // Postgres role "vectoradb" password
+	PGPassword    string `json:"pg_password"`    // Postgres role "oxyndb" password
 	MinioUser     string `json:"minio_user"`     // MinIO root user / AWS access key id
 	MinioPassword string `json:"minio_password"` // MinIO root password / AWS secret key
 }
 
 const (
-	envPG         = "VECTORADB_PG_PASSWORD"
-	envMinioUser  = "VECTORADB_MINIO_USER"
-	envMinioPass  = "VECTORADB_MINIO_PASSWORD"
+	envPG         = "OXYNDB_PG_PASSWORD"
+	envMinioUser  = "OXYNDB_MINIO_USER"
+	envMinioPass  = "OXYNDB_MINIO_PASSWORD"
 	secretsFile   = "secrets.json"
-	configDirName = ".vectoradb"
+	configDirName = ".oxyndb"
 )
 
 var (
@@ -73,7 +73,7 @@ func loadOrCreate() Secrets {
 		changed = true
 	}
 	if s.MinioUser == "" {
-		s.MinioUser = "vdb" + randToken()[:12]
+		s.MinioUser = "odb" + randToken()[:12]
 		changed = true
 	}
 	if s.MinioPassword == "" {

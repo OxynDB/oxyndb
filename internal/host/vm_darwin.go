@@ -14,12 +14,12 @@ import (
 
 func vmStatus() error {
 	if _, err := exec.LookPath("limactl"); err != nil {
-		fmt.Println("Lima isn't installed, so there is no VectoraDB VM yet. Install it with `brew install lima`, then run `vdb setup`.")
+		fmt.Println("Lima isn't installed, so there is no OxynDB VM yet. Install it with `brew install lima`, then run `odb setup`.")
 		return nil
 	}
 	name := instance()
 	if !instanceExists(name) {
-		fmt.Printf("No VectoraDB VM yet (Lima instance %q) — run `vdb setup` to create it.\n", name)
+		fmt.Printf("No OxynDB VM yet (Lima instance %q) — run `odb setup` to create it.\n", name)
 		return nil
 	}
 	out, err := exec.Command("limactl", "list", name, "--format", "{{.Status}}|{{.CPUs}}|{{.Memory}}|{{.Disk}}|{{.Dir}}").Output()
@@ -32,24 +32,24 @@ func vmStatus() error {
 	}
 	mem, _ := strconv.ParseInt(f[2], 10, 64)
 	disk, _ := strconv.ParseInt(f[3], 10, 64)
-	fmt.Printf("VectoraDB VM: %s (Lima)\n", name)
+	fmt.Printf("OxynDB VM: %s (Lima)\n", name)
 	fmt.Printf("  status  %s\n  cpus    %s\n  memory  %s\n  disk    %s\n  files   %s\n", f[0], f[1], gib(mem), gib(disk), f[4])
 	if f[0] != "Running" {
-		fmt.Println("Start it, and the stack inside it, with: vdb start")
+		fmt.Println("Start it, and the stack inside it, with: odb start")
 	}
 	return nil
 }
 
 func vmShell() error {
 	if _, err := exec.LookPath("limactl"); err != nil {
-		return fmt.Errorf("Lima is required on macOS — install it with `brew install lima`, then run `vdb setup`")
+		return fmt.Errorf("Lima is required on macOS — install it with `brew install lima`, then run `odb setup`")
 	}
 	name := instance()
 	if !instanceExists(name) {
-		return fmt.Errorf("no VectoraDB VM yet — run `vdb setup` once to create it")
+		return fmt.Errorf("no OxynDB VM yet — run `odb setup` once to create it")
 	}
 	if !instanceRunning(name) {
-		return fmt.Errorf("the VectoraDB VM (%s) is stopped — start it with `vdb start`", name)
+		return fmt.Errorf("the OxynDB VM (%s) is stopped — start it with `odb start`", name)
 	}
 	cmd := exec.Command("limactl", "shell", name)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
