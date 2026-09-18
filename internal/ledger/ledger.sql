@@ -127,15 +127,35 @@ $$;
 -- Attribution context. The actor is the login identity (session_user) when the
 -- client logged in as a per-user role — a value a client CANNOT change (SET ROLE
 -- leaves session_user untouched), so gateway attribution is non-forgeable. The
--- shared/admin roles fall back to the gateway-injected actor. The rest is read
--- from connection settings the Gateway injects.
+-- shared/admin roles fall back to the gateway-injected actor.
+--
+-- actor_kind follows the role for the same reason, rather than being read from
+-- the connection: vdb.actor_kind is an ordinary session setting, so a client
+-- could `SET vdb.actor_kind = 'human'` and have its changes recorded as a
+-- person's — an agent could hide as one, which is exactly what this record
+-- exists to prevent. An agent's own role is always 'agent' and a per-user role
+-- is always 'human'. Only the engine's own shared roles (the console, MCP,
+-- imports), which have no identity of their own, still take the injected value.
+--
+-- tool and session stay client-declared, and are labelled that way wherever
+-- they are shown: application_name is a string any client chooses, and an
+-- agent framework naming its own session is the point of vdb.session. They
+-- describe the change; actor and actor_kind attribute it.
 CREATE OR REPLACE FUNCTION vdb._ctx(
   OUT actor text, OUT actor_kind text, OUT tool text, OUT session text, OUT branch text
 ) LANGUAGE sql STABLE AS $$
   SELECT CASE WHEN session_user NOT IN ('vectoradb','vdbclient')
               THEN session_user
               ELSE current_setting('vdb.actor', true) END,
-         coalesce(nullif(current_setting('vdb.actor_kind', true), ''), 'human'),
+         CASE
+           -- An agent branch's own role: agent-<id>. A per-user role is named
+           -- for an email address, so one containing '@' is a person even if
+           -- the address itself begins with "agent-".
+           WHEN session_user LIKE 'agent-%' AND position('@' in session_user) = 0 THEN 'agent'
+           WHEN session_user NOT IN ('vectoradb','vdbclient') THEN 'human'
+           WHEN current_setting('vdb.actor_kind', true) = 'agent' THEN 'agent'
+           ELSE 'human'
+         END,
          nullif(current_setting('application_name', true), ''),
          coalesce(nullif(current_setting('vdb.session', true), ''), pg_backend_pid()::text),
          current_setting('vdb.branch', true);

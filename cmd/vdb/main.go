@@ -124,8 +124,10 @@ Serverless front door:
 
 Agent Branch API:
   serve [--addr :8088] Run the HTTP API: one database branch per AI agent
-  mcp                  Run the MCP server on stdio: an agent framework gets a database,
-                       runs SQL, sees what it changed (Blackbox), and throws it away
+  mcp [--key <vdb_…>]  Run the MCP server on stdio: an agent framework gets a database,
+                       runs SQL, sees what it changed (Blackbox), and throws it away.
+                       Needs an API key (VECTORADB_API_KEY or --key); a key scoped
+                       to one branch limits the server to that branch
 
 Auth (admin):
   user create <email>            Create an account (prompts for a password)
@@ -286,12 +288,24 @@ func main() {
 		must(proxy.Serve(addrFlag(os.Args[2:], ":6432"), durFlag(os.Args[2:], "--idle", 2*time.Minute)))
 	case "mcp":
 		// MCP server on stdio: an agent framework drives branches + the ledger.
-		must(mcp.Serve())
+		// It acts as an API key's account, so the key comes first.
+		must(mcp.Serve(mcpKey(os.Args[2:])))
 	default:
 		fmt.Printf("unknown command: %s\n\n", os.Args[1])
 		fmt.Print(usage)
 		os.Exit(2)
 	}
+}
+
+// mcpKey is the API key `vdb mcp` acts as: `--key <vdb_…>`, else
+// VECTORADB_API_KEY. A key on the command line is visible in the process list,
+// so the environment variable is what a client config should use -- but the
+// flag stays, for trying the server by hand.
+func mcpKey(args []string) string {
+	if k := optValue(args, "--key"); k != "" {
+		return k
+	}
+	return os.Getenv("VECTORADB_API_KEY")
 }
 
 // restoreArg accepts either `--to <ts>` or a bare `<ts>`.

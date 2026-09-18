@@ -307,7 +307,7 @@ refuse it. Deleting the branch revokes the key.
 one standard interface:
 
 ```bash
-vdb mcp                         # MCP server on stdio
+VECTORADB_API_KEY=vdb_… vdb mcp   # MCP server on stdio (needs a key)
 ```
 
 Client setup and the full tool reference: [docs/mcp.md](docs/mcp.md).

@@ -12,6 +12,7 @@ package mcp
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -43,10 +44,26 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
-// Serve runs the MCP server on stdio until stdin closes.
-func Serve() error {
+// Serve runs the MCP server on stdio until stdin closes. key is the API key the
+// server acts as (see auth.go): without a valid one it serves nothing, since
+// every tool here can change databases and each change is recorded against the
+// key's account.
+func Serve(key string) error {
 	log.SetOutput(os.Stderr)
 	log.SetPrefix("vdb mcp: ")
+	who, err := authenticate(key)
+	if err != nil {
+		if errors.Is(err, ErrNoKey) {
+			return fmt.Errorf("%s", KeyHelp)
+		}
+		return fmt.Errorf("%v\n\n%s", err, KeyHelp)
+	}
+	me = who
+	if me.Scope != "" {
+		log.Printf("acting as %s, limited to branch %q", me.Actor, me.Scope)
+	} else {
+		log.Printf("acting as %s", me.Actor)
+	}
 	dec := json.NewDecoder(bufio.NewReader(os.Stdin))
 	out := bufio.NewWriter(os.Stdout)
 	enc := json.NewEncoder(out)
@@ -268,7 +285,14 @@ func callTool(params json.RawMessage) map[string]any {
 }
 
 func runTool(name string, args json.RawMessage) (string, error) {
-	switch resolveTool(name) {
+	tool := resolveTool(name)
+	// A branch-scoped key reaches one branch and no further.
+	scoped, err := applyScope(tool, args)
+	if err != nil {
+		return "", err
+	}
+	args = scoped
+	switch tool {
 	case "create_branch":
 		var a struct {
 			AgentID string `json:"agent_id"`
@@ -324,7 +348,7 @@ func runTool(name string, args json.RawMessage) (string, error) {
 		if branch.MCPSuperuser() {
 			return branch.QueryText(a.Branch, a.SQL)
 		}
-		return branch.ClientQueryText(a.Branch, a.SQL, "mcp")
+		return branch.ClientQueryTextAs(a.Branch, a.SQL, "mcp", me.Actor)
 
 	case "changes":
 		var a struct {
